@@ -145,6 +145,8 @@ describe('haomao provider：查询', () => {
       output: { url: 'https://cdn/a.mp4' },
     })
     expect(await statusOf({ id: 'cgt_1', status: 'succeeded', content: {} })).toMatchObject({ state: 'failed', code: 'haomao_no_video' })
+    // 余额不足：succeeded 但没有地址、payment_required，按账户错误处理
+    expect(await statusOf({ id: 'cgt_1', status: 'succeeded', content: { video_url: '' }, payment_required: true })).toMatchObject({ state: 'failed', code: 'haomao_insufficient_balance' })
   })
 
   it('第一次失败用原请求体重提，换成新任务继续轮询', async () => {

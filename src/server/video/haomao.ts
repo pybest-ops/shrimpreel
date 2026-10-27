@@ -15,6 +15,8 @@ interface HaomaoTask {
   id?: string
   status?: string
   content?: { video_url?: string }
+  // 余额不足时任务照样 succeeded，但成片地址为空、payment_required 为 true（充值后才能取结果）
+  payment_required?: boolean
   error?: { code?: string; message?: string } | null
 }
 
@@ -94,6 +96,8 @@ export function createHaomaoProvider(env: Env): VideoProvider {
     async status(requestId, meta): Promise<VideoStatus> {
       const task = await call<HaomaoTask>('status', `/contents/generations/tasks/${encodeURIComponent(requestId)}`)
       if (task.status === 'succeeded') {
+        // 余额不足：按账户错误判失败（立即告警、退积分），不当作普通的“没有成片”
+        if (task.payment_required) return { state: 'failed', code: 'haomao_insufficient_balance', message: 'haomao balance too low to fetch the result' }
         const url = task.content?.video_url
         if (!url) return { state: 'failed', code: 'haomao_no_video', message: 'haomao task succeeded without a video url' }
         return { state: 'completed', output: { url } }
