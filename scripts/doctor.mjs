@@ -46,16 +46,19 @@ export function parsePendingMigrations(output) {
 }
 
 // `wrangler secret list --format json`：[{ "name": "...", "type": "secret_text" }]，前后可能夹着 wrangler 的提示行
+// 提示行里也可能有方括号（如 stderr 的 “▲ [WARNING] Proxy …”），所以从每个“行首的 [”开始，向后逐个 ] 试着解析，取第一个能解析成数组的
 export function parseSecretNames(output) {
-  const start = output.indexOf('[')
-  const end = output.lastIndexOf(']')
-  if (start < 0 || end < start) return null
-  try {
-    const list = JSON.parse(output.slice(start, end + 1))
-    return Array.isArray(list) ? list.map((s) => s.name).filter((n) => typeof n === 'string') : null
-  } catch {
-    return null
+  for (const start of output.matchAll(/^\[/gm)) {
+    for (let end = output.indexOf(']', start.index); end >= 0; end = output.indexOf(']', end + 1)) {
+      try {
+        const list = JSON.parse(output.slice(start.index, end + 1))
+        if (Array.isArray(list)) return list.map((s) => s.name).filter((n) => typeof n === 'string')
+      } catch {
+        // 还没到这个数组的结尾，继续找下一个 ]
+      }
+    }
   }
+  return null
 }
 
 // 派生新站时没拿到的信息写成 `TODO(site): …`（见 .claude/skills/new-hot-site），上线前必须全部填完

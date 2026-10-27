@@ -161,6 +161,8 @@ describe('doctor', () => {
       'SESSION_SECRET',
     ])
     expect(parseSecretNames('✘ [ERROR] Worker not found [code: 10007]')).toBeNull()
+    // 设了代理时 stderr 有 “▲ [WARNING] …”，拼在 JSON 后面
+    expect(parseSecretNames('[\n  {\n    "name": "FAL_KEY",\n    "type": "secret_text"\n  }\n]\n\n▲ [WARNING] Proxy environment variables detected.\n')).toEqual(['FAL_KEY'])
   })
 
   // 把模板配置改成一份可上线的配置，再逐项破坏
