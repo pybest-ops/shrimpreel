@@ -9,4 +9,6 @@ interface Env {
   STRIPE_WEBHOOK_SECRET?: string
   PAYMENT_NOTIFY_WEBHOOK_URL?: string
   RESEND_API_KEY?: string
+  // 可选绑定：后处理容器（styles[].audio 合成原曲），站点在 wrangler.jsonc 里开启 containers 时才有
+  POSTPROCESS?: DurableObjectNamespace
 }

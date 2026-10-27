@@ -5,7 +5,7 @@ import { VideoProviderError } from '#/server/video/types'
 
 // haomaotoken 契约：火山引擎方舟内容生成接口（/api/v3/contents/generations/tasks）+ /files/uploads 文件上传，
 // 和兄弟项目里跑通的调用方式一致。provider 只把任务映射成 VideoStatus，退积分、下载成片在 jobs.ts
-const r2 = new Set(['uploads/u_1/up_1.jpg', 'templates/neon-12s.mp4', 'templates/neon-12s.mp3'])
+const r2 = new Set(['uploads/u_1/up_1.jpg', 'templates/neon-12s.mp4'])
 const media = {
   async get(key: string) {
     if (!r2.has(key)) return null
@@ -88,13 +88,12 @@ describe('haomao provider：提交', () => {
     expect(result).toEqual({ requestId: 'cgt_1', meta: { request } })
   })
 
-  it('有参考配乐：多传一段音频、prompt 说明用它做音轨、开启音轨；风格 prompt 优先', async () => {
+  it('风格的 prompt 优先于 site.video.haomao.prompt；不传参考音频', async () => {
     const calls = stubFetch({ 'POST /api/v3/files/uploads': uploads(), 'POST /api/v3/contents/generations/tasks': () => json({ id: 'cgt_1' }) })
-    await createHaomaoProvider(env()).submit(input({ audioKey: 'templates/neon-12s.mp3', style: { ...plainStyle, prompt: 'Style prompt.' } }))
-    const request = calls[3]!.body as { content: unknown[]; generate_audio: boolean }
-    expect(request.content[0]).toEqual({ type: 'text', text: 'Style prompt. Use audio 1 as the background music.' })
-    expect(request.content[3]).toEqual({ type: 'audio_url', audio_url: { url: 'https://files.haomao/3' }, role: 'reference_audio' })
-    expect(request.generate_audio).toBe(true)
+    await createHaomaoProvider(env()).submit(input({ style: { ...plainStyle, prompt: 'Style prompt.' } }))
+    const request = calls[2]!.body as { content: Array<{ type: string }> }
+    expect(request.content[0]).toEqual({ type: 'text', text: 'Style prompt.' })
+    expect(request.content.map((c) => c.type)).toEqual(['text', 'image_url', 'video_url'])
   })
 
   it('R2 里没有素材：不可重试，不调用接口', async () => {

@@ -1,6 +1,7 @@
 // haomaotoken（可选的第四个视频服务商，VIDEO_PROVIDER=haomao）：火山引擎方舟内容生成接口的中转，路径与方舟一致。
-// 用 Seedance 2.0 做参考生视频：照片（image 1）+ 模板源视频（video 1）+ 可选参考配乐（audio 1）+ prompt。
-// 方舟只读 haomaotoken 文件存储里的素材，所以提交前先把三样从 R2 读出来上传到 /files/uploads，再用返回的地址建任务。
+// 用 Seedance 2.0 做参考生视频：照片（image 1）+ 模板源视频（video 1）+ prompt。
+// 方舟只读 haomaotoken 文件存储里的素材，所以提交前先把两样从 R2 读出来上传到 /files/uploads，再用返回的地址建任务。
+// 不传参考音频：实测 Seedance 不会照着它出音轨。风格的原曲（styles[].audio）由出片后的后处理容器合成（src/server/postprocess.ts）。
 // 没有回调，靠 jobs.ts 轮询。创建任务没有幂等键：Worker 在建完任务、写库之前中断，重投时会再建一个（重复扣费），概率很低，不做去重。
 // 任务失败时用同一请求体重提一次（haomaotoken 偶发临时失败，重提通常就能成功），第二次再失败才判失败退积分。
 import { site } from '#/config/site'
@@ -68,19 +69,14 @@ export function createHaomaoProvider(env: Env): VideoProvider {
       const { model, resolution, generateAudio } = site.video.haomao
       const imageUrl = await upload(input.imageKey)
       const videoUrl = await upload(input.sourceVideoKey)
-      const audioUrl = input.audioKey ? await upload(input.audioKey) : null
-      const prompt = input.style.prompt ?? site.video.haomao.prompt
-      const content: unknown[] = [
-        // 有参考配乐时在 prompt 末尾说明用它做音轨
-        { type: 'text', text: audioUrl ? `${prompt} Use audio 1 as the background music.` : prompt },
-        { type: 'image_url', image_url: { url: imageUrl }, role: 'reference_image' },
-        { type: 'video_url', video_url: { url: videoUrl }, role: 'reference_video' },
-      ]
-      if (audioUrl) content.push({ type: 'audio_url', audio_url: { url: audioUrl }, role: 'reference_audio' })
       const request = {
         model,
-        content,
-        generate_audio: Boolean(audioUrl) || generateAudio,
+        content: [
+          { type: 'text', text: input.style.prompt ?? site.video.haomao.prompt },
+          { type: 'image_url', image_url: { url: imageUrl }, role: 'reference_image' },
+          { type: 'video_url', video_url: { url: videoUrl }, role: 'reference_video' },
+        ],
+        generate_audio: generateAudio,
         resolution,
         ratio: site.template.aspectRatio,
         duration: Math.round(input.durationSeconds),

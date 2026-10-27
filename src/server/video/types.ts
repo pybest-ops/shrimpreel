@@ -10,8 +10,6 @@ export interface VideoSubmitInput {
   imageKey: string
   sourceVideoUrl: string
   sourceVideoKey: string
-  // 这个风格、这个时长档位的参考配乐在 R2 的 key（styles[].audio），没有则不带
-  audioKey?: string
   webhookUrl: string
   meta: Record<string, unknown>
 }

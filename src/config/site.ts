@@ -46,8 +46,8 @@ export const site = {
       // yir 两步走（可选）：先用图片模型把照片里的人合成进源视频首帧，再拿合成图做动作参考，成片保留源视频的场景。
       // null = 单步，直接用用户照片做参考，背景会变成照片的背景。图片模型等共用参数在 video.yir.sceneImage
       scene: null as StyleScene | null,
-      // haomao（Seedance）的参考配乐（可选）：键 = durations[].id，值 = seed/templates/ 里的音频文件，和源视频一起上传到 R2 的 templates/。
-      // 成片音轨按 prompt 取自这段音频；null = 不传参考音频，由模型自己生成音轨。其它服务商忽略这个字段
+      // 原曲（可选）：键 = durations[].id，值 = seed/templates/ 里的音频文件，和源视频一起上传到 R2 的 templates/。
+      // 配了就在出片后由后处理容器把成片音轨换成它（需要 POSTPROCESS 容器绑定，见 README“成片配乐”）；null = 保留服务商输出的音轨
       audio: null as Readonly<Record<string, string>> | null,
       // 首页展示素材（public/demo/）。换成真实素材时必须拥有授权，credit 写原作者，例如 '@handle · TikTok'。
       examples: {
@@ -110,16 +110,16 @@ export const site = {
       // genjutsu-1.0：480p $0.117/s、720p $0.273/s、1080p $0.78/s。motion_control 计费秒数 = 源视频秒数四舍五入、至少 4 秒；replace_object 向上取整
       costCentsPerSecond: 11.7,
     },
-    // haomaotoken（可选，VIDEO_PROVIDER=haomao）：火山引擎方舟 Seedance 2.0 的中转，照片 + 源视频（+ 可选参考配乐 styles[].audio）做参考生视频。
-    // 方舟只读 haomaotoken 文件存储里的素材，所以每次提交前先把照片、源视频、配乐从 R2 上传过去。
-    // prompt 里用 image 1 / video 1 / audio 1 指代照片、源视频和配乐；风格的 styles[].prompt 优先。
+    // haomaotoken（可选，VIDEO_PROVIDER=haomao）：火山引擎方舟 Seedance 2.0 的中转，照片 + 源视频做参考生视频。
+    // 方舟只读 haomaotoken 文件存储里的素材，所以每次提交前先把照片、源视频从 R2 上传过去。
+    // prompt 里用 image 1 / video 1 指代照片和源视频；风格的 styles[].prompt 优先。原曲用 styles[].audio 在出片后合成
     // Seedance 单条时长上限 15 秒，durations 里超过 15 秒的档位会被接口拒绝（任务失败退积分）
     haomao: {
       model: 'seedance-2.0-fast',
       prompt:
         'Replace the main performer in video 1 with the person in image 1. Keep their face, hairstyle and outfit. Keep the setting, the other people and the camera movement of video 1, with the same moves and timing.',
       resolution: '480p' as '480p' | '720p',
-      // 没有参考配乐时是否让模型生成音轨；有 styles[].audio 时总是开启
+      // 是否让模型生成音轨；配了 styles[].audio 的风格音轨会被原曲替换，关掉即可
       generateAudio: false,
       // 成本估算（美分/秒），只用于后台毛利；未核对 haomaotoken 报价，上线前按实际账单改
       costCentsPerSecond: 10,
@@ -262,7 +262,7 @@ export interface Style {
   sources: Readonly<Record<DurationOption['id'], string>> // 键 = durations[].id，值 = seed/templates/ 里的文件名
   prompt: string | null
   scene: StyleScene | null
-  // 只有 haomao 用：参考配乐文件，键 = durations[].id
+  // 原曲文件，键 = durations[].id；出片后由后处理容器合成（src/server/postprocess.ts）
   audio?: Readonly<Record<string, string>> | null
   examples: {
     original: ExampleClip
@@ -274,6 +274,8 @@ export interface Style {
 export const STYLES: readonly Style[] = site.styles
 // 第一个风格是默认风格：请求不带 styleId、首页 SSR 和 SEO 都用它
 export const defaultStyle: Style = STYLES[0]!
+// 配了原曲（styles[].audio）的风格：出片后要经后处理容器合成，站点必须有 POSTPROCESS 绑定
+export const audioStyleIds: readonly string[] = STYLES.filter((s) => s.audio).map((s) => s.id)
 
 export function findStyle(id: string): Style | undefined {
   return STYLES.find((s) => s.id === id)
