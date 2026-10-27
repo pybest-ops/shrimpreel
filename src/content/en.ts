@@ -4,7 +4,8 @@ import type { ArticleKey, site as Site } from '#/config/site'
 
 type S = typeof Site
 type StyleId = S['styles'][number]['id']
-type StyleCopy = { name: string; tagline: string }
+// seats：多人风格每个位置的名称和一句提示（键 = site.styles[].seats[].id）；seatsNote：位置格子下方的说明
+type StyleCopy = { name: string; tagline: string; seats?: Record<string, { name: string; hint: string }>; seatsNote?: string }
 type ArticleContent = { title: string; description: string; intro: string; sections: Array<{ h: string; p: string[] }> }
 // FAQ 答案可附一条文章链接；锚文本用与文章标题不同的长尾词
 type FaqItem = { q: string; a: string; guide?: { article: ArticleKey; label: string } }
@@ -90,6 +91,11 @@ export function en(s: S) {
       full: 'full',
       creditsLabel: (n: number) => `${n} credits`,
       consent: 'This photo is of me, or I have permission from the person in it. They are 18 or older and not a celebrity or public figure.',
+      // 多人风格：每张照片都要本人同意
+      consentSeats: 'Every photo is of me or of someone who gave me permission. Everyone is 18 or older and not a celebrity or public figure.',
+      optional: 'Optional',
+      addPhoto: 'Add a photo',
+      removePhoto: 'Remove photo',
       ctaSignUp: 'Sign up free and start',
       ctaGenerate: (n: number) => `Generate video · ${n} credits`,
       ctaBuy: 'Get credits to generate',
@@ -518,6 +524,9 @@ export function en(s: S) {
       unsupported_file_type: 'Please upload a JPG, PNG or WebP image.',
       invalid_upload: 'Please upload the photo again.',
       invalid_style: 'That dance style isn’t available. Please pick another one.',
+      invalid_seat: 'One of the extra photos can’t be used. Please add it again.',
+      duplicate_photo: 'Each person needs their own photo. Use a different photo for each seat.',
+      seats_unsupported: 'Extra people aren’t available right now. Remove the extra photos and try again.',
       queue_unavailable: 'Our render queue is busy. Your credits were returned; please try again.',
       payment_not_configured: 'Payments are not available right now.',
       payment_provider_error: 'The payment provider did not respond. Please try again.',

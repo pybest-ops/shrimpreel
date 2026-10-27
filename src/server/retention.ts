@@ -21,6 +21,8 @@ export async function sweepExpiredMedia(env: Env, options: SweepOptions = {}) {
     const rows = await env.DB.prepare(
       `SELECT id, r2_key FROM uploads u WHERE expired_at IS NULL AND created_at < ? ${userFilter}
        AND NOT EXISTS (SELECT 1 FROM generations g WHERE g.upload_id = u.id AND g.status IN ('queued', 'processing'))
+       AND NOT EXISTS (SELECT 1 FROM generation_seats s JOIN generations g ON g.id = s.generation_id
+         WHERE s.upload_id = u.id AND g.status IN ('queued', 'processing'))
        LIMIT ${BATCH}`,
     )
       .bind(cutoff, ...userParams)

@@ -10,6 +10,8 @@ export interface VideoSubmitInput {
   imageKey: string
   sourceVideoUrl: string
   sourceVideoKey: string
+  // 多人风格可选位置的照片（R2 key），按 style.seats 的顺序；只有支持多张参考图的服务商（haomao）使用
+  seatImages?: Array<{ seatId: string; key: string }>
   // 这个风格、这个时长档位的参考配乐在 R2 的 key（styles[].audio），没有则不带
   audioKey?: string
   webhookUrl: string

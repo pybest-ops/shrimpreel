@@ -17,6 +17,8 @@ export interface ConfigInput {
   packageIds: readonly string[]
   // 在售的订阅套餐 id（sellingPlans，订阅开关关掉时为空），同样要在 *_PRODUCTS 里有商品
   planIds?: readonly string[]
+  // 配了多人位置的风格 id（seatStyleIds），有就要求视频服务商支持多张参考图
+  seatStyleIds?: readonly string[]
   siteDomain: string
 }
 
@@ -146,6 +148,11 @@ export function checkConfig(input: ConfigInput): ConfigIssue[] {
   if (video === 'mock') error('VIDEO_PROVIDER', 'VIDEO_PROVIDER=mock：生产环境提交生成会返回 503')
   else if (!VIDEO_SECRETS[video]) error('VIDEO_PROVIDER', `未知的 VIDEO_PROVIDER=${video || '(空)'}，可选 fal、yir、nanoapi、haomao`)
   else requireSecrets(VIDEO_SECRETS[video], `${video} 视频生成`)
+  // 多人风格只有 haomao 支持（多张参考图）；其它服务商只会用主角照片，可选位置的照片会被接口拒绝
+  const seatStyles = input.seatStyleIds ?? []
+  if (seatStyles.length && video !== 'haomao' && video !== 'mock') {
+    error('VIDEO_PROVIDER', `风格 ${seatStyles.join('、')} 配了多人位置（styles[].seats），只有 VIDEO_PROVIDER=haomao 支持，当前是 ${video || '(空)'}`)
+  }
 
   const moderation = vars('MODERATION_PROVIDER')
   if (moderation === 'mock') error('MODERATION_PROVIDER', 'MODERATION_PROVIDER=mock：生产环境上传图片一律返回 503')

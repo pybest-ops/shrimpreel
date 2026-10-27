@@ -126,6 +126,17 @@ async function submitGeneration(env: Env, generation: GenerationRow) {
 
   const provider = getVideoProvider(env, generation.provider)
   const baseMeta = parseMeta(generation.provider_meta)
+  // 多人风格：可选位置的照片按风格里的位置顺序排列；照片已过期（清理或下架）的位置跳过，由源视频里的人照旧出演
+  const seatRows = style.seats?.length
+    ? (
+        await env.DB.prepare(
+          'SELECT s.seat_id, u.r2_key FROM generation_seats s JOIN uploads u ON u.id = s.upload_id WHERE s.generation_id = ? AND u.expired_at IS NULL',
+        )
+          .bind(generation.id)
+          .all<{ seat_id: string; r2_key: string }>()
+      ).results
+    : []
+  const seatImages = (style.seats ?? []).flatMap((seat) => seatRows.filter((row) => row.seat_id === seat.id).map((row) => ({ seatId: seat.id, key: row.r2_key })))
 
   // 签名在 try 里：生产环境 SESSION_SECRET 配错时会抛错，要和提交失败一样放回 queued，交给队列重试和死信退款
   try {
@@ -141,6 +152,7 @@ async function submitGeneration(env: Env, generation: GenerationRow) {
       imageKey: upload.r2_key,
       sourceVideoUrl: templateSourceUrl(env, sourceFile),
       sourceVideoKey: `templates/${sourceFile}`,
+      seatImages,
       audioKey: style.audio?.[duration.id] ? `templates/${style.audio[duration.id]}` : undefined,
       webhookUrl: webhookUrl.toString(),
       meta: baseMeta,

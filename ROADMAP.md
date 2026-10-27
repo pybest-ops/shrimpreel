@@ -144,6 +144,7 @@
    - ~~#34~~ 已完成（2026-10-25）。可选的 NanoAPI 视频服务商，见下文。
    - ~~#35~~ 已完成（2026-10-25）。多舞蹈风格（`site.styles`），见下文。
    - ~~#38~~ 已完成（2026-10-27）。可选的 haomaotoken（Seedance 2.0）视频服务商，见下文。
+   - ~~#40~~ 已完成（2026-10-27）。多人位置（`styles[].seats`），见下文。
 3. 第三批，变现：
    - ~~#6~~ 已完成（2026-10-21）。积分分批次与过期，见下文。
    - ~~#9~~ 已完成（2026-10-21）。兑换码，见下文。
@@ -203,6 +204,15 @@
 - 告警通道：所有告警和 D1 备份失败同时发到 `PAYMENT_NOTIFY_WEBHOOK_URL`（KV 去重）；新增“视频服务商余额”告警，每小时查一次，低于 10 美元告警。余额查询抽成 `src/server/video-balance.ts`，测试连接共用。
 - 测试：`tests/unit/pricing.test.ts`（`packageMakes`、`cheapestPackageCovering`）、`tests/unit/llms.test.ts`、`tests/unit/alerts.test.ts`（余额阈值、聊天群去重）；e2e 2 个（生成器就地购买到积分到账；暂停收款时就地购买禁用）。
 - 未验证：线上聊天群实际收到告警（飞书关键词）；余额告警在真实 yir 账户上触发。
+
+**#40 多人位置**（2026-10-27）
+
+- 风格可选 `seats`：第一个位置是必填的主角，其余可选，每个位置一张照片，价格不变；只有 haomao 支持（多张参考图），doctor 和后台配置检查在其它服务商下报错。
+- 数据：迁移 `0016_generation_seats.sql`，主角照片仍在 `generations.upload_id`；清理跳过进行中任务的可选照片，举报下架时同一条成片的所有照片一起删除、拉黑，数据导出加 `generationSeats`。
+- 接口：`POST /api/generations` 接受 `seats: { seatId: uploadId }`，错误码 `invalid_seat`、`duplicate_photo`（按 id 和 sha256）、`seats_unsupported`。haomao 按风格里的位置顺序上传照片，prompt 由 `seatPrompt` 按实际填了的位置拼出。
+- 界面：生成器显示主角大格加可选格，可移除可选照片；授权文案换成“每张照片都已获得本人同意”。
+- 测试：`haomao.test.ts`（拼 prompt、多图顺序）、`config-health` 补一条；e2e 1 个（未知位置、重复照片、正常出片，模板没有多人风格时跳过）。
+- 未验证：Seedance 一次替换多人的稳定性只在第一个站的干净底片上试过（5 人，第二版镜头顺序基本对上）。
 
 **#38 haomaotoken（Seedance 2.0）视频服务商**（2026-10-27）
 

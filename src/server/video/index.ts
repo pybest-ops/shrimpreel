@@ -25,6 +25,9 @@ function createMockProvider(): VideoProvider {
   }
 }
 
+// 支持多人风格（多张参考图）的服务商；mock 只走流程，不看照片
+export const SEAT_PROVIDERS: readonly string[] = ['haomao', 'mock']
+
 export function activeVideoProviderId(env: Env): VideoProvider['id'] {
   if (env.VIDEO_PROVIDER === 'fal') return 'fal'
   if (env.VIDEO_PROVIDER === 'yir') return 'yir'

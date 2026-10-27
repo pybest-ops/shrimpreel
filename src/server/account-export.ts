@@ -37,6 +37,9 @@ const QUERIES = {
       created_at AS createdAt, completed_at AS completedAt, expired_at AS expiredAt, removed_at AS removedAt,
       share_id AS shareId, shared_at AS sharedAt
     FROM generations WHERE user_id = ?1 ORDER BY created_at`,
+  // 多人风格里可选位置用到的照片
+  generationSeats: `SELECT s.generation_id AS generationId, s.seat_id AS seatId, s.upload_id AS uploadId
+    FROM generation_seats s JOIN generations g ON g.id = s.generation_id WHERE g.user_id = ?1 ORDER BY s.generation_id, s.seat_id`,
   contactMessages: `SELECT id, email, topic, message, status, created_at AS createdAt
     FROM contact_messages WHERE user_id = ?1 ORDER BY created_at`,
   takedownRequests: `SELECT id, reporter_name AS reporterName, reporter_email AS reporterEmail, content_ref AS contentRef,

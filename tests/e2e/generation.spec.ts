@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
 import { STYLES, defaultStyle, formatPrice, site } from '#/config/site'
 import { ORIGIN, PHOTO, buyPackage, credits, devLogin, durationCredits, json, ledger, pkg, post, uniqueEmail, uploadPhoto } from './helpers'
@@ -171,4 +173,47 @@ test.describe('多风格站点', () => {
     await expect(page.getByTestId(`style-${defaultStyle.id}`)).toHaveAttribute('aria-checked', 'true')
     expect(site.styles.length).toBeGreaterThan(1)
   })
+})
+
+// 多人风格（styles[].seats）：可选位置的照片和主角一起提交，同一个价格；模板默认没有多人风格时跳过
+test('多人位置：可选位置一起生成；未知位置、重复照片返回 400 且不扣积分', async ({ request }) => {
+  const style = STYLES.find((s) => s.seats?.length)
+  test.skip(!style, '站点没有多人风格')
+  const seats = style!.seats!
+  test.skip(seats.length < 2, '多人风格只有主角一个位置')
+  const duration = site.durations[site.durations.length - 1]!
+  // 每张照片内容不同（sha256 不同），否则会被判为同一张
+  const photo = () => Buffer.concat([readFileSync(PHOTO), randomBytes(16)]) as Buffer<ArrayBuffer>
+  const upload = async () => (await json<{ upload: { id: string } }>(uploadPhoto(request, photo()), 201)).upload.id
+
+  await devLogin(request, uniqueEmail('seats'))
+  await buyPackage(request, 'starter')
+  const before = await credits(request)
+  test.skip(before < duration.credits, 'starter 买不起最长时长')
+  const [lead, extra] = [await upload(), await upload()]
+  const seatId = seats[1]!.id
+
+  const unknown = await json<{ error: string }>(
+    post(request, '/api/generations', { uploadId: lead, seats: { [seats[0]!.id]: extra }, durationId: duration.id, styleId: style!.id }),
+    400,
+  )
+  expect(unknown.error).toBe('invalid_seat')
+  const duplicate = await json<{ error: string }>(
+    post(request, '/api/generations', { uploadId: lead, seats: { [seatId]: lead }, durationId: duration.id, styleId: style!.id }),
+    400,
+  )
+  expect(duplicate.error).toBe('duplicate_photo')
+  expect(await credits(request)).toBe(before)
+
+  const { generation } = await json<{ generation: Generation }>(
+    post(request, '/api/generations', { uploadId: lead, seats: { [seatId]: extra }, durationId: duration.id, styleId: style!.id }),
+    201,
+  )
+  expect(await credits(request)).toBe(before - duration.credits)
+  await expect
+    .poll(async () => (await json<{ generation: Generation }>(request.get(`/api/generations/${generation.id}`))).generation.status, {
+      timeout: 60_000,
+      intervals: [1000],
+    })
+    .toBe('succeeded')
 })

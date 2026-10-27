@@ -63,6 +63,8 @@ e2e 跑在本地 dev server 上，支付、视频、审核服务商都是 mock�
   - 不存在的 styleId 返回 `invalid_style`，余额不变、没有任务；不带 styleId 时 `templateId` 是默认风格，扣 short 档积分。
 - `generation.spec.ts` › `首页切换 hero 标签与生成器同步，选第二个风格生成，记录里是所选风格；?style= 可预选`
   - 只在 `site.styles` 多于一个时运行（模板默认一个，会跳过）：hero 标签与生成器选中项同步，方向键切标签，“Made with”每个风格一行；所选风格写入 `templateId`；`?style=` 预选，无效 id 回到默认风格。
+- `generation.spec.ts` › `多人位置：可选位置一起生成；未知位置、重复照片返回 400 且不扣积分`
+  - 只在有风格配了 `seats` 时运行（模板默认没有，会跳过）：把主角位置当作可选位置提交返回 `invalid_seat`，可选位置用主角同一张照片返回 `duplicate_photo`，两者都不扣积分；正常提交扣最长时长的积分并出片。
 - `alerts.spec.ts` › `死信：任务判失败并只退一次积分；健康检查告警，同一时间桶重复执行不重发`
   - 死信消费者重复处理同一条消息（或和轮询并发）时，积分只退一次。
 

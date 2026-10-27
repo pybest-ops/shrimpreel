@@ -12,7 +12,7 @@ import { spawnSync } from 'node:child_process'
 import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import ts from 'typescript'
-import { sellingPlans, site } from '../src/config/site.ts'
+import { seatStyleIds, sellingPlans, site } from '../src/config/site.ts'
 import { checkConfig } from '../src/server/config-health.ts'
 
 export function readWranglerConfig(file) {
@@ -84,6 +84,7 @@ export function runDoctor(
     bindings: configBindings(config),
     packageIds,
     planIds,
+    seatStyleIds,
     siteDomain,
   })
   const error = (key, message) => issues.push({ level: 'error', key, message })

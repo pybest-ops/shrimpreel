@@ -1,7 +1,7 @@
 import { useRouterState } from '@tanstack/react-router'
-import { CircleAlert, CircleCheck, Download, Upload } from 'lucide-react'
+import { CircleAlert, CircleCheck, Download, Upload, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { STYLES, cheapestPackageCovering, defaultStyle, formatPrice, site } from '#/config/site'
+import { STYLES, cheapestPackageCovering, defaultStyle, formatPrice, site, type StyleSeat } from '#/config/site'
 import { api, errorCode, isActiveGeneration, type Generation } from '#/lib/api'
 import { track } from '#/lib/attribution'
 import { useCheckout } from '#/lib/checkout'
@@ -10,6 +10,8 @@ import { signInHref, useSession } from '#/lib/session'
 import { AiBadge, ErrorText, GoogleIcon, LocalLink, Spinner, formatDate } from './ui'
 
 type Photo = { file: File; previewUrl: string; uploadId: string | null }
+// 主角照片的键；多人风格的可选位置用各自的 seat id
+const MAIN = 'main'
 
 const POLL_MS = 3000
 
@@ -22,12 +24,22 @@ export function Generator({ styleId: controlledStyleId, onStyleChange }: { style
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const { user, config, loading, refresh } = useSession()
   const inputRef = useRef<HTMLInputElement>(null)
-  const [photo, setPhoto] = useState<Photo | null>(null)
-  const [uploading, setUploading] = useState(false)
+  // 文件选择框是共用的，点哪个格子就记下哪个位置
+  const pickSeat = useRef<string>(MAIN)
+  const [photos, setPhotos] = useState<Record<string, Photo>>({})
+  const photosRef = useRef(photos)
+  photosRef.current = photos
+  // 正在上传的照片数：多人风格可以同时传好几张
+  const [uploads, setUploads] = useState(0)
+  const uploading = uploads > 0
   const [dragging, setDragging] = useState(false)
   const [ownStyleId, setOwnStyleId] = useState<string>(defaultStyle.id)
   const styleId = controlledStyleId ?? ownStyleId
   const selectStyle = onStyleChange ?? setOwnStyleId
+  const style = STYLES.find((s) => s.id === styleId) ?? defaultStyle
+  // 多人风格：第一个位置是主角（照片存在 MAIN），其余可选
+  const seats = style.seats?.length ? style.seats : null
+  const photo = photos[MAIN] ?? null
   const [durationId, setDurationId] = useState<string>(site.durations[site.durations.length - 1]!.id)
   const [consent, setConsent] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -40,9 +52,10 @@ export function Generator({ styleId: controlledStyleId, onStyleChange }: { style
   // 余额不足时直接在这里下单够用的最便宜积分包；没有够用的包就退回去价格页
   const coverPack = shortfall > 0 ? cheapestPackageCovering(shortfall) : undefined
 
+  // 卸载时释放所有预览图；单个位置换照片或移除时在 setSeatPhoto 里释放
   useEffect(() => () => {
-    if (photo) URL.revokeObjectURL(photo.previewUrl)
-  }, [photo])
+    for (const item of Object.values(photosRef.current)) URL.revokeObjectURL(item.previewUrl)
+  }, [])
 
   // 轮询当前任务直到结束；结束后刷新余额（失败时积分已退回）
   useEffect(() => {
@@ -61,32 +74,54 @@ export function Generator({ styleId: controlledStyleId, onStyleChange }: { style
   }, [generation, refresh])
 
   async function upload(file: File) {
-    setUploading(true)
+    setUploads((n) => n + 1)
     try {
       const form = new FormData()
       form.append('file', file)
       const data = await api<{ upload: { id: string } }>('/api/uploads', { form })
       return data.upload.id
     } finally {
-      setUploading(false)
+      setUploads((n) => n - 1)
     }
   }
 
-  async function selectFile(file: File | undefined) {
+  // 换掉或移除一个位置的照片，同时释放旧的预览图
+  function setSeatPhoto(seat: string, next: Photo | null) {
+    setPhotos((current) => {
+      const old = current[seat]
+      if (old && old !== next) URL.revokeObjectURL(old.previewUrl)
+      const { [seat]: _, ...rest } = current
+      return next ? { ...rest, [seat]: next } : rest
+    })
+  }
+
+  // 上传完成后只在这个位置还是同一个文件时写回 uploadId（期间可能已经换了照片）
+  function rememberUpload(seat: string, file: File, uploadId: string) {
+    setPhotos((current) => (current[seat]?.file === file ? { ...current, [seat]: { ...current[seat]!, uploadId } } : current))
+  }
+
+  async function selectFile(file: File | undefined, seat = MAIN) {
     if (!file) return
     setError(null)
     if (!(site.upload.contentTypes as readonly string[]).includes(file.type)) return setError('unsupported_file_type')
     if (file.size > site.upload.maxBytes) return setError('file_too_large')
-    const next: Photo = { file, previewUrl: URL.createObjectURL(file), uploadId: null }
-    setPhoto(next)
+    setSeatPhoto(seat, { file, previewUrl: URL.createObjectURL(file), uploadId: null })
     setGeneration(null)
     if (!user) return
     try {
-      const uploadId = await upload(file)
-      setPhoto((current) => (current?.file === file ? { ...current, uploadId } : current))
+      rememberUpload(seat, file, await upload(file))
     } catch (err) {
       setError(errorCode(err))
     }
+  }
+
+  // 拿到一个位置的 uploadId：没登录时选的照片在这里补传
+  async function ensureUpload(seat: string) {
+    const item = photos[seat]!
+    if (item.uploadId) return item.uploadId
+    const uploadId = await upload(item.file)
+    rememberUpload(seat, item.file, uploadId)
+    return uploadId
   }
 
   async function generate() {
@@ -94,10 +129,12 @@ export function Generator({ styleId: controlledStyleId, onStyleChange }: { style
     setError(null)
     setSubmitting(true)
     try {
-      const uploadId = photo.uploadId ?? (await upload(photo.file))
-      if (!photo.uploadId) setPhoto({ ...photo, uploadId })
-      const data = await api<{ generation: Generation }>('/api/generations', { json: { uploadId, durationId, styleId, locale } })
-      track('generate_video', { style_id: styleId, duration_id: durationId, credits: data.generation.creditsCost })
+      const uploadId = await ensureUpload(MAIN)
+      // 只提交当前风格里填了照片的可选位置
+      const filled = (seats ?? []).slice(1).filter((seat) => photos[seat.id])
+      const seatUploads = Object.fromEntries(await Promise.all(filled.map(async (seat) => [seat.id, await ensureUpload(seat.id)] as const)))
+      const data = await api<{ generation: Generation }>('/api/generations', { json: { uploadId, seats: seatUploads, durationId, styleId, locale } })
+      track('generate_video', { style_id: styleId, duration_id: durationId, credits: data.generation.creditsCost, seats: filled.length + 1 })
       setGeneration(data.generation)
       await refresh()
     } catch (err) {
@@ -138,14 +175,31 @@ export function Generator({ styleId: controlledStyleId, onStyleChange }: { style
           aria-label={g.dropTitle}
           data-testid="photo-input"
           onChange={(event) => {
-            void selectFile(event.target.files?.[0])
+            void selectFile(event.target.files?.[0], pickSeat.current)
             event.target.value = ''
           }}
         />
+        {seats ? (
+          <SeatGrid
+            seats={seats}
+            photos={photos}
+            copy={c.styles[style.id as keyof typeof c.styles]}
+            busy={busy}
+            onPick={(seat) => {
+              pickSeat.current = seat
+              inputRef.current?.click()
+            }}
+            onDrop={(seat, file) => void selectFile(file, seat)}
+            onRemove={(seat) => setSeatPhoto(seat, null)}
+          />
+        ) : (
         <button
           type="button"
           disabled={busy}
-          onClick={() => inputRef.current?.click()}
+          onClick={() => {
+            pickSeat.current = MAIN
+            inputRef.current?.click()
+          }}
           onDragOver={(event) => {
             event.preventDefault()
             setDragging(true)
@@ -154,7 +208,7 @@ export function Generator({ styleId: controlledStyleId, onStyleChange }: { style
           onDrop={(event) => {
             event.preventDefault()
             setDragging(false)
-            void selectFile(event.dataTransfer.files?.[0])
+            void selectFile(event.dataTransfer.files?.[0], MAIN)
           }}
           className={`flex w-full items-center justify-center rounded-xl border-2 border-dashed px-4 py-6 text-center transition ${
             dragging ? 'border-accent bg-accent/5' : 'border-line hover:border-fg/40'
@@ -181,6 +235,7 @@ export function Generator({ styleId: controlledStyleId, onStyleChange }: { style
             </span>
           )}
         </button>
+        )}
         <p className="text-xs leading-5 text-muted">{g.guidance}</p>
       </section>
 
@@ -252,7 +307,7 @@ export function Generator({ styleId: controlledStyleId, onStyleChange }: { style
           className="mt-0.5 size-4 shrink-0 accent-[var(--ink)]"
           data-testid="consent"
         />
-        <span>{g.consent}</span>
+        <span>{seats ? g.consentSeats : g.consent}</span>
       </label>
 
       {/* CTA */}
@@ -319,6 +374,74 @@ export function Generator({ styleId: controlledStyleId, onStyleChange }: { style
 
       {generation ? <GenerationResult generation={generation} onReset={reset} /> : null}
     </section>
+  )
+}
+
+// 多人风格的照片格子：第一个是必填的主角（大格），其余可选；填了的可选格可以移除
+function SeatGrid({
+  seats,
+  photos,
+  copy,
+  busy,
+  onPick,
+  onDrop,
+  onRemove,
+}: {
+  seats: readonly StyleSeat[]
+  photos: Record<string, Photo>
+  copy: { seats?: Record<string, { name: string; hint: string }>; seatsNote?: string }
+  busy: boolean
+  onPick: (seat: string) => void
+  onDrop: (seat: string, file: File | undefined) => void
+  onRemove: (seat: string) => void
+}) {
+  const g = useContent().generator
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3" data-testid="seat-grid">
+        {seats.map((seat, index) => {
+          const key = index === 0 ? MAIN : seat.id
+          const item = photos[key]
+          const label = copy.seats?.[seat.id]
+          return (
+            <div key={seat.id} className={`relative ${index === 0 ? 'col-span-2 row-span-2 sm:col-span-1' : ''}`}>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => onPick(key)}
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  onDrop(key, event.dataTransfer.files?.[0])
+                }}
+                data-testid={`seat-${seat.id}`}
+                className={`flex h-full min-h-28 w-full flex-col justify-end gap-0.5 overflow-hidden rounded-xl border-2 p-2.5 text-left transition ${
+                  index === 0 ? 'border-solid border-ink/60' : 'border-dashed border-line hover:border-fg/40'
+                }`}
+              >
+                {item ? <img src={item.previewUrl} alt="" className="absolute inset-0 size-full rounded-[10px] object-cover" /> : null}
+                <span className={`relative rounded-md px-1.5 py-0.5 ${item ? 'bg-bg/85' : ''}`}>
+                  <span className="block text-sm font-semibold">{label?.name ?? seat.id}</span>
+                  <span className="block text-xs text-muted">{item ? g.change : index === 0 ? (label?.hint ?? g.addPhoto) : `${g.optional} · ${label?.hint ?? g.addPhoto}`}</span>
+                </span>
+              </button>
+              {item && index > 0 ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => onRemove(key)}
+                  aria-label={g.removePhoto}
+                  className="absolute top-1.5 right-1.5 grid size-6 place-items-center rounded-full bg-bg/90 text-fg shadow"
+                >
+                  <X className="size-3.5" />
+                </button>
+              ) : null}
+            </div>
+          )
+        })}
+      </div>
+      {copy.seatsNote ? <p className="text-xs leading-5 text-muted">{copy.seatsNote}</p> : null}
+    </div>
   )
 }
 

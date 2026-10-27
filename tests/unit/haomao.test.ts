@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultStyle, site, type Style } from '#/config/site'
-import { createHaomaoProvider, haomaoCostCents } from '#/server/video/haomao'
+import { createHaomaoProvider, haomaoCostCents, seatPrompt } from '#/server/video/haomao'
 import { VideoProviderError } from '#/server/video/types'
 
 // haomaotoken 契约：火山引擎方舟内容生成接口（/api/v3/contents/generations/tasks）+ /files/uploads 文件上传，
 // 和兄弟项目里跑通的调用方式一致。provider 只把任务映射成 VideoStatus，退积分、下载成片在 jobs.ts
-const r2 = new Set(['uploads/u_1/up_1.jpg', 'templates/neon-12s.mp4', 'templates/neon-12s.mp3'])
+const r2 = new Set(['uploads/u_1/up_1.jpg', 'uploads/u_1/up_2.jpg', 'uploads/u_1/up_3.jpg', 'templates/neon-12s.mp4', 'templates/neon-12s.mp3'])
 const media = {
   async get(key: string) {
     if (!r2.has(key)) return null
@@ -127,6 +127,39 @@ describe('haomao provider：提交', () => {
       throw new TypeError('fetch failed')
     })
     expect(await rejection(createHaomaoProvider(env()).submit(input()))).toMatchObject({ code: 'haomao_upload_network', retryable: true })
+  })
+})
+
+// 多人风格：主角 image 1，填了照片的可选位置按风格顺序接 image 2..n，没填的位置不出现在 prompt 里
+describe('haomao provider：多人位置', () => {
+  const seats = [
+    { id: 'lead', target: 'the lead singer in the burgundy blazer' },
+    { id: 'keys', target: 'the keyboard player in the yellow hoodie' },
+    { id: 'sax', target: 'the saxophone player in the green flannel shirt' },
+  ]
+
+  it('seatPrompt 只写主角和填了的位置，编号连续', () => {
+    expect(seatPrompt(seats, [])).toMatch(/^Replace the lead singer in the burgundy blazer in video 1 with the person in image 1\. Each person/)
+    const prompt = seatPrompt(seats, ['sax'])
+    expect(prompt).toContain('Replace the saxophone player in the green flannel shirt in video 1 with the person in image 2.')
+    expect(prompt).not.toContain('keyboard')
+  })
+
+  it('照片按风格里的位置顺序上传，prompt 按位置拼，忽略风格的 prompt 字段', async () => {
+    const calls = stubFetch({ 'POST /api/v3/files/uploads': uploads(), 'POST /api/v3/contents/generations/tasks': () => json({ id: 'cgt_1' }) })
+    const style = { ...plainStyle, prompt: 'ignored', seats }
+    await createHaomaoProvider(env()).submit(
+      input({
+        style,
+        seatImages: [
+          { seatId: 'keys', key: 'uploads/u_1/up_2.jpg' },
+          { seatId: 'sax', key: 'uploads/u_1/up_3.jpg' },
+        ],
+      }),
+    )
+    const request = calls.at(-1)!.body as { content: Array<{ type: string; text?: string; image_url?: { url: string } }> }
+    expect(request.content[0]!.text).toBe(seatPrompt(seats, ['keys', 'sax']))
+    expect(request.content.filter((c) => c.type === 'image_url').map((c) => c.image_url!.url)).toEqual(['https://files.haomao/1', 'https://files.haomao/2', 'https://files.haomao/3'])
   })
 })
 

@@ -60,6 +60,9 @@ describe('checkConfig', () => {
     expect(keys(ready({ vars: { VIDEO_PROVIDER: 'yir' }, secrets: { YIR_API_KEY: 'y' } }))).toEqual([])
     expect(keys(ready({ vars: { VIDEO_PROVIDER: 'nanoapi' } }))).toEqual(['error:NANOAPI_API_KEY'])
     expect(keys(ready({ vars: { VIDEO_PROVIDER: 'haomao' } }))).toEqual(['error:HAOMAO_API_KEY'])
+    // 多人风格只有 haomao 支持
+    expect(keys({ ...ready(), seatStyleIds: ['band-v1'] })).toEqual(['error:VIDEO_PROVIDER'])
+    expect(keys({ ...ready({ vars: { VIDEO_PROVIDER: 'haomao' }, secrets: { HAOMAO_API_KEY: 'h' } }), seatStyleIds: ['band-v1'] })).toEqual([])
     expect(keys(ready({ secrets: { SESSION_SECRET: 'change-me-to-a-long-random-string' } }))).toEqual(['error:SESSION_SECRET'])
     expect(keys(ready({ secrets: { SESSION_SECRET: ' ' } }))).toEqual(['error:SESSION_SECRET'])
     expect(keys(ready({ secrets: { SESSION_SECRET: true } }))).toEqual([])

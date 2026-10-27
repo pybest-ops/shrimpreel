@@ -49,6 +49,10 @@ export const site = {
       // haomao（Seedance）的参考配乐（可选）：键 = durations[].id，值 = seed/templates/ 里的音频文件，和源视频一起上传到 R2 的 templates/。
       // 成片音轨按 prompt 取自这段音频；null = 不传参考音频，由模型自己生成音轨。其它服务商忽略这个字段
       audio: null as Readonly<Record<string, string>> | null,
+      // 多人位置（可选，只有 haomao 支持）：第一项是必填的主角，其余可选，每个位置一张照片，同一个价格。
+      // target 用英文描述源视频里要被替换的那个人（外貌、服装、位置），prompt 按用户实际填了的位置拼出来，此时 prompt 字段不再使用。
+      // 位置的名称和提示写在 src/content/<locale>.ts 的 styles[id].seats；null = 只传一张照片
+      seats: null as readonly StyleSeat[] | null,
       // 首页展示素材（public/demo/）。换成真实素材时必须拥有授权，credit 写原作者，例如 '@handle · TikTok'。
       examples: {
         original: { video: '/demo/original.mp4', poster: '/demo/original.jpg', credit: 'Demo clip · original' },
@@ -257,6 +261,13 @@ export interface ExampleClip {
   credit: string
 }
 
+// 多人风格的一个位置：id 写入 generation_seats.seat_id，发布后不要改
+export interface StyleSeat {
+  id: string
+  // 源视频里被替换的那个人，英文描述，用于拼 prompt
+  target: string
+}
+
 export interface Style {
   id: string
   sources: Readonly<Record<DurationOption['id'], string>> // 键 = durations[].id，值 = seed/templates/ 里的文件名
@@ -264,6 +275,8 @@ export interface Style {
   scene: StyleScene | null
   // 只有 haomao 用：参考配乐文件，键 = durations[].id
   audio?: Readonly<Record<string, string>> | null
+  // 多人位置：第一项是必填的主角（照片存在 generations.upload_id），其余可选（generation_seats）
+  seats?: readonly StyleSeat[] | null
   examples: {
     original: ExampleClip
     aiVersions: readonly ExampleClip[]
@@ -274,6 +287,9 @@ export interface Style {
 export const STYLES: readonly Style[] = site.styles
 // 第一个风格是默认风格：请求不带 styleId、首页 SSR 和 SEO 都用它
 export const defaultStyle: Style = STYLES[0]!
+
+// 配了多人位置的风格 id：上线检查要求视频服务商支持多张参考图
+export const seatStyleIds: readonly string[] = STYLES.filter((s) => s.seats?.length).map((s) => s.id)
 
 export function findStyle(id: string): Style | undefined {
   return STYLES.find((s) => s.id === id)

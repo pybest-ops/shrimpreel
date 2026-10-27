@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
-import { defaultStyle, findDuration, findPackage, findPlan, findStyle, isLocale, localePath, sellingPlans, site } from '#/config/site'
+import { defaultStyle, findDuration, findPackage, findPlan, findStyle, isLocale, localePath, sellingPlans, site, type Style } from '#/config/site'
 import { safeRedirectPath } from '#/lib/redirect'
 import { exportFileName, exportUserData } from './account-export'
 import { adminRoutes } from './admin'
@@ -45,7 +45,7 @@ import { createTakedown, isBlockedMedia, parseTakedown, type TakedownInput } fro
 import { turnstileSiteKey, verifyTurnstile } from './turnstile'
 import type { AppContext, GenerationRow, OrderRow, UploadRow, UserRow } from './types'
 import { ApiError, constantTimeEqual, createId, isCheckConstraintError, isProduction, nowIso, randomToken, sha256Hex } from './util'
-import { activeVideoProviderId } from './video'
+import { SEAT_PROVIDERS, activeVideoProviderId } from './video'
 
 const MAX_ACTIVE_JOBS_PER_USER = 3
 
@@ -286,7 +286,7 @@ app.post('/api/generations', async (c) => {
   const settings = await getSettings(c.env)
   assertOpen(settings, user)
   await rateLimit(c.env.GENERATE_LIMITER, user.id)
-  const body = await readJson<{ uploadId: string; durationId: string; styleId?: string; mockOutcome: string; locale: string }>(c)
+  const body = await readJson<{ uploadId: string; seats?: Record<string, unknown>; durationId: string; styleId?: string; mockOutcome: string; locale: string }>(c)
   const duration = findDuration(body.durationId ?? '')
   if (!duration) throw new ApiError(400, 'invalid_duration')
   // 不带 styleId 用默认风格；带了但不存在报错，不悄悄换风格
@@ -298,6 +298,7 @@ app.post('/api/generations', async (c) => {
     .bind(body.uploadId ?? '', user.id)
     .first<UploadRow>()
   if (!upload) throw new ApiError(400, 'invalid_upload')
+  const seatUploads = await resolveSeatUploads(db, c.env, user.id, style, upload, body.seats)
   const active = await db
     .prepare(`SELECT COUNT(*) AS n FROM generations WHERE user_id = ? AND status IN ('queued', 'processing')`)
     .bind(user.id)
@@ -321,6 +322,9 @@ app.post('/api/generations', async (c) => {
            VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
         )
         .bind(id, user.id, style.id, duration.id, duration.seconds, duration.credits, upload.id, providerId, meta, now, now),
+      ...seatUploads.map((seat) =>
+        db.prepare('INSERT INTO generation_seats (generation_id, seat_id, upload_id) VALUES (?, ?, ?)').bind(id, seat.seatId, seat.uploadId),
+      ),
       ...ledgerStatements(db, {
         userId: user.id,
         delta: -duration.credits,
@@ -1056,4 +1060,23 @@ function isLocalDevRequest(c: { env: Env; req: { url: string; header(name: strin
   if (c.req.header('x-forwarded-for') || c.req.header('forwarded')) return false
   const edgeIp = c.req.header('cf-connecting-ip')
   return !edgeIp || ['127.0.0.1', '::1'].includes(edgeIp)
+}
+
+// 多人风格的可选位置：body.seats = { seatId: uploadId }。只接受这个风格里主角以外的位置；
+// 照片要属于本人、没过期，和主角照片、彼此之间都不能是同一张（按 id 和 sha256 判断）；服务商要支持多张参考图
+async function resolveSeatUploads(db: D1Database, env: Env, userId: string, style: Style, lead: UploadRow, raw: unknown) {
+  const entries = Object.entries(raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}).filter(([, id]) => id)
+  if (!entries.length) return []
+  if (!SEAT_PROVIDERS.includes(activeVideoProviderId(env))) throw new ApiError(400, 'seats_unsupported')
+  const optional = new Set((style.seats ?? []).slice(1).map((seat) => seat.id))
+  if (entries.some(([seatId, uploadId]) => !optional.has(seatId) || typeof uploadId !== 'string')) throw new ApiError(400, 'invalid_seat')
+  const ids = entries.map(([, uploadId]) => uploadId as string)
+  const found = await db
+    .prepare(`SELECT id, sha256 FROM uploads WHERE user_id = ? AND expired_at IS NULL AND id IN (${ids.map(() => '?').join(', ')})`)
+    .bind(userId, ...ids)
+    .all<{ id: string; sha256: string | null }>()
+  if (found.results.length !== new Set(ids).size) throw new ApiError(400, 'invalid_seat')
+  const hashes = [lead.sha256, ...found.results.map((row) => row.sha256)].filter((hash): hash is string => Boolean(hash))
+  if (new Set([lead.id, ...ids]).size !== ids.length + 1 || new Set(hashes).size !== hashes.length) throw new ApiError(400, 'duplicate_photo')
+  return entries.map(([seatId, uploadId]) => ({ seatId, uploadId: uploadId as string }))
 }

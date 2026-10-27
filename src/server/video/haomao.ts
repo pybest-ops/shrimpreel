@@ -3,7 +3,7 @@
 // 方舟只读 haomaotoken 文件存储里的素材，所以提交前先把三样从 R2 读出来上传到 /files/uploads，再用返回的地址建任务。
 // 没有回调，靠 jobs.ts 轮询。创建任务没有幂等键：Worker 在建完任务、写库之前中断，重投时会再建一个（重复扣费），概率很低，不做去重。
 // 任务失败时用同一请求体重提一次（haomaotoken 偶发临时失败，重提通常就能成功），第二次再失败才判失败退积分。
-import { site } from '#/config/site'
+import { site, type StyleSeat } from '#/config/site'
 import { cleanSecret } from '../util'
 import type { VideoProvider, VideoStatus } from './types'
 import { VideoProviderError } from './types'
@@ -68,14 +68,17 @@ export function createHaomaoProvider(env: Env): VideoProvider {
     id: 'haomao',
     async submit(input) {
       const { model, resolution, generateAudio } = site.video.haomao
-      const imageUrl = await upload(input.imageKey)
+      // 多人风格：主角照片是 image 1，可选位置的照片按风格里的顺序接在后面
+      const seats = input.style.seats?.length ? input.style.seats : null
+      const seatImages = seats ? (input.seatImages ?? []) : []
+      const imageUrls = await Promise.all([input.imageKey, ...seatImages.map((seat) => seat.key)].map(upload))
       const videoUrl = await upload(input.sourceVideoKey)
       const audioUrl = input.audioKey ? await upload(input.audioKey) : null
-      const prompt = input.style.prompt ?? site.video.haomao.prompt
+      const prompt = seats ? seatPrompt(seats, seatImages.map((seat) => seat.seatId)) : (input.style.prompt ?? site.video.haomao.prompt)
       const content: unknown[] = [
         // 有参考配乐时在 prompt 末尾说明用它做音轨
         { type: 'text', text: audioUrl ? `${prompt} Use audio 1 as the background music.` : prompt },
-        { type: 'image_url', image_url: { url: imageUrl }, role: 'reference_image' },
+        ...imageUrls.map((url) => ({ type: 'image_url', image_url: { url }, role: 'reference_image' })),
         { type: 'video_url', video_url: { url: videoUrl }, role: 'reference_video' },
       ]
       if (audioUrl) content.push({ type: 'audio_url', audio_url: { url: audioUrl }, role: 'reference_audio' })
@@ -117,6 +120,17 @@ export function createHaomaoProvider(env: Env): VideoProvider {
 
     costCents: haomaoCostCents,
   }
+}
+
+// 多人风格的 prompt：主角是 image 1，填了照片的可选位置按风格里的顺序是 image 2..n；
+// 每张照片只对应一个人，没填的位置保留源视频里的人
+export function seatPrompt(seats: readonly StyleSeat[], filled: readonly string[]) {
+  const used = [seats[0]!, ...seats.slice(1).filter((seat) => filled.includes(seat.id))]
+  return [
+    ...used.map((seat, index) => `Replace ${seat.target} in video 1 with the person in image ${index + 1}.`),
+    'Each person keeps the face, hairstyle and outfit from their own image.',
+    'Keep everyone else, the room, the instruments, the camera movement, the shot order and the timing of video 1 the same.',
+  ].join(' ')
 }
 
 // 估算：按成片秒数乘单价，单价在 site.video.haomao.costCentsPerSecond
