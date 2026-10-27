@@ -219,10 +219,10 @@ async function pollGeneration(env: Env, generation: GenerationRow) {
     }
     await env.MEDIA.put(outputKey, await source.arrayBuffer(), { httpMetadata: { contentType: 'video/mp4' } })
   }
-  // 风格配了原曲：交给后处理容器把音轨换成原曲。本地开发没有容器绑定时跳过（成片保持原样）；
+  // 风格配了原曲：交给后处理容器把音轨换成原曲。只在 production / staging 做，本地开发不启动容器（成片保持原样）；
   // 可重试的错误抛给队列，下次轮询会重新转存、重新合成；不可重试的判失败退积分
   const audioKey = styleAudioKey(generation.template_id, generation.duration_id)
-  if (audioKey && (env.POSTPROCESS || isProduction(env))) {
+  if (audioKey && isProduction(env)) {
     try {
       await muxStyleAudio(env, outputKey, audioKey)
     } catch (error) {
