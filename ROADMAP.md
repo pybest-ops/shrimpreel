@@ -209,7 +209,7 @@
 - 第四个可选 `VideoProvider`（`VIDEO_PROVIDER=haomao`，密钥 `HAOMAO_API_KEY`，配置 `site.video.haomao`）：照片 + 模板源视频 + 可选参考配乐（新增的 `styles[].audio`）做 Seedance 参考生视频。提交前把素材从 R2 上传到 haomaotoken 文件存储（`VideoSubmitInput` 新增 `imageKey`、`audioKey`）。
 - 没有回调，轮询 30 秒；任务失败用原请求体重提一次（走 `VideoStatus.next`）；401/402/403 映射为账户错误并告警；没有余额接口，测试连接只确认配了 Key（`BalanceQuery` 新增 `unsupported`）。
 - 测试：`tests/unit/haomao.test.ts`（上传、请求体、配乐、错误映射、重提、成本），`config-health`、`providers`、`probes` 各补一条。
-- 未验证：没有用真实 key 在模板里跑过一单；配乐和成片音轨的效果、单价都要第一个站上线时核对。没有幂等去重，Worker 中断时可能重复建任务。
+- 配乐：兄弟项目用同样的调用方式（参考配乐 + `generate_audio: true`）出的样片，音轨和参考配乐频谱相关 0.74–0.87（打乱时间基线 0.34），说明 Seedance 确实照着参考配乐出音轨，不需要事后合成。未验证：没有用真实 key 在模板里跑过一单；单价要第一个站上线时核对。没有幂等去重，Worker 中断时可能重复建任务。
 
 **#37 第二套主题、右下角同意卡片、页脚“问问 AI”**（2026-10-26，参考竞品 rumpelstiltskinai.dance 的外观）
 
