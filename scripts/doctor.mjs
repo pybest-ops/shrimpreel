@@ -74,7 +74,15 @@ export function findSiteTodos(root = fileURLToPath(new URL('..', import.meta.url
 // secretNames / pendingMigrations：undefined = 没有核对（--offline），null = 查询失败
 export function runDoctor(
   config,
-  { secretNames, pendingMigrations, siteDomain = site.domain, packageIds = site.packages.map((p) => p.id), planIds = sellingPlans.map((p) => p.id), siteTodos = [] } = {},
+  {
+    secretNames,
+    pendingMigrations,
+    siteDomain = site.domain,
+    packageIds = site.packages.map((p) => p.id),
+    planIds = sellingPlans.map((p) => p.id),
+    seatStyles = seatStyleIds,
+    siteTodos = [],
+  } = {},
 ) {
   const vars = config.vars ?? {}
   const issues = checkConfig({
@@ -84,7 +92,7 @@ export function runDoctor(
     bindings: configBindings(config),
     packageIds,
     planIds,
-    seatStyleIds,
+    seatStyleIds: seatStyles,
     siteDomain,
   })
   const error = (key, message) => issues.push({ level: 'error', key, message })

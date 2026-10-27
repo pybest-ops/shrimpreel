@@ -14,8 +14,8 @@ const media = {
 }
 const env = (vars: Record<string, unknown> = {}) => ({ APP_ENV: 'production', HAOMAO_API_KEY: 'hm_test', MEDIA: media, ...vars }) as unknown as Env
 
-// 站点会给默认风格配自己的 prompt：用例默认按风格不带 prompt、不带配乐跑
-const plainStyle: Style = { ...defaultStyle, prompt: null, scene: null, audio: null }
+// 站点会给默认风格配自己的 prompt、配乐和多人位置：用例默认都不带
+const plainStyle: Style = { ...defaultStyle, prompt: null, scene: null, audio: null, seats: null }
 
 const input = (extra: Record<string, unknown> = {}) => ({
   generationId: 'gen_1',

@@ -4,7 +4,8 @@ import type { Content } from './en'
 
 type S = typeof Site
 type StyleId = S['styles'][number]['id']
-type StyleCopy = { name: string; tagline: string }
+// 与 en.ts 的 StyleCopy 一致：seats 是多人风格每个位置的名称和提示，seatsNote 是位置格子下方的说明
+type StyleCopy = { name: string; tagline: string; seats?: Record<string, { name: string; hint: string }>; seatsNote?: string }
 
 export function zh(s: S): Content {
   const k = s.keyword
