@@ -89,7 +89,7 @@ const ALERTS_ZH: Record<AlertKind, (p: AlertParams) => { title: string; summary:
   provider_account: (p) => ({
     title: `视频服务商账户异常：${p.count} 个任务失败`,
     summary: `最近 ${span(p.windowMinutes)}有 ${p.count} 个生成任务因服务商账户问题失败（${p.detail ?? ''}），已自动退积分。不处理的话之后的任务都会失败。`,
-    hint: '按错误码处理：provider_not_configured 是没配密钥；YIR_UNAUTHORIZED 是密钥失效；YIR_INSUFFICIENT_BALANCE 到 yir 后台充值；YIR_SPEND_LIMIT_EXCEEDED 调高 API Key 的月度额度；nanoapi_invalid_api_key 是 NanoAPI 密钥失效；nanoapi_insufficient_balance 到 NanoAPI 后台充值；nanoapi_account_suspended 是账户被停用，联系 NanoAPI 支持；haomao_unauthorized 是 haomaotoken 密钥失效；haomao_insufficient_balance 到 haomaotoken 后台充值；haomao_forbidden 是账户或模型权限受限；postprocess_not_configured 是风格配了原曲但没有后处理容器绑定（README“成片配乐”）。',
+    hint: '按错误码处理：provider_not_configured 是没配密钥；YIR_UNAUTHORIZED 是密钥失效；YIR_INSUFFICIENT_BALANCE 到 yir 后台充值；YIR_SPEND_LIMIT_EXCEEDED 调高 API Key 的月度额度；nanoapi_invalid_api_key 是 NanoAPI 密钥失效；nanoapi_insufficient_balance 到 NanoAPI 后台充值；nanoapi_account_suspended 是账户被停用，联系 NanoAPI 支持；haomao_unauthorized 是 haomaotoken 密钥失效；haomao_insufficient_balance 到 haomaotoken 后台充值；haomao_forbidden 是账户或模型权限受限。',
     path: '/admin/generations',
   }),
   provider_balance: (p) => ({

@@ -167,22 +167,6 @@ npx wrangler r2 object put <name>-media/templates/<file>.mp4 --file seed/templat
   - 报告和失败时的 trace 在 `.tmp/smoke-prod/`。
 - 自定义域名可用后，在站点的 `wrangler.jsonc` 里设 `"workers_dev": false` 和 `"preview_urls": false`。否则正式 Worker 还会在 `*.workers.dev` 上响应，绕过你在域名上配置的 WAF 和限流规则；每个版本还有一个公开的 [Version URL](https://developers.cloudflare.com/workers/configuration/previews/)，用同一套 D1、R2 运行该版本的代码。模板默认开着 `workers_dev`，是为了新站在绑定域名前也能访问。
 
-### 成片配乐（可选，后处理容器）
-
-视频模型给不出原曲（实测 Seedance 不会照着参考音频出音轨），想让成片带上趋势原曲的站点，在风格上配 `styles[].audio`，出片后由后处理容器把音轨换成原曲。
-
-- 原曲文件：每个时长档位一段（键 = `durations[].id`），长度和源视频一致，放在 `seed/templates/`，和源视频一样上传到 R2：`npx wrangler r2 object put <name>-media/templates/<file>.mp3 --file seed/templates/<file>.mp3 --content-type audio/mpeg --remote`。
-- 流程：成片转存 R2 之后，`jobs.ts` 把成片和原曲发给容器的 `POST /mux`（`containers/postprocess/server.mjs`），ffmpeg 原样复制画面、音轨换成原曲（AAC 128k），按较短的一方截断，再写回同一个 R2 key。代码在 `src/server/postprocess.ts`。
-- 容器忙（503）、冷启动失败或连不上时抛给队列重试，下次轮询会重新转存、重新合成；输入有问题（4xx）判失败退积分。生产环境没有容器绑定时也判失败退积分（`postprocess_not_configured`，触发“视频服务商账户”告警）；本地开发没有绑定时跳过合成。
-- 开启：在站点的 `wrangler.jsonc` 里加下面三段（模板默认不加，因为部署带容器的 Worker 需要本机或 CI 有 Docker，账号要 Workers Paid）。`npm run doctor` 和后台配置检查会在风格配了原曲却没有 `POSTPROCESS` 绑定时报错。
-  ```jsonc
-  "containers": [{ "class_name": "PostprocessContainer", "image": "./containers/postprocess/Dockerfile", "max_instances": 3, "instance_type": "basic" }],
-  "durable_objects": { "bindings": [{ "name": "POSTPROCESS", "class_name": "PostprocessContainer" }] },
-  "migrations": [{ "tag": "postprocess-v1", "new_sqlite_classes": ["PostprocessContainer"] }]
-  ```
-- 同时开 3 个实例（`src/server/postprocess.ts` 的 `INSTANCES`，要和 `max_instances` 一致），每个实例一次处理一个任务，空闲 2 分钟后休眠。镜像构建时会从 GitHub 下载 c2patool（C2PA 签名用，`/mux` 不需要签名凭据）。
-- 未验证：`/mux` 只用本机 ffmpeg 跑过（无声视频 + mp3 → 15 秒 h264 + aac）；Docker 镜像和 Containers 实机没有跑过。
-
 ### 模板预发（workers.dev）
 
 没有域名时，用 [wrangler.staging.jsonc](wrangler.staging.jsonc) 把模板本身部署到 `https://video-template-staging.<子域名>.workers.dev`，用来验证真实绑定、Google 登录、支付商 test 模式和视频服务商回调。
@@ -301,8 +285,8 @@ SMOKE_BASE_URL=https://video-template-staging.<子域名>.workers.dev SMOKE_EXPE
   - NanoAPI 会自己下载照片和源视频：用浏览器 User-Agent，读视频时发 Range 请求。源视频读不了时任务以 `internal_error` 失败（全额退款），不会报 `invalid_media`。实测里，不支持 Range 的服务器和不带扩展名的签名地址都出现过这种情况。模板的 `/media/*` 路由支持 Range，地址以 `.mp4` 结尾。不要在 `/media/*` 前面加人机验证，包括 Bot Fight Mode、Under Attack 模式和 WAF 质询。本地测试不要用 Pinggy 免费隧道，它会给浏览器返回一个提示页。
   - NanoAPI 创建任务没有幂等键，队列重投或 Worker 中断后重新提交会重复扣费。所以创建前先列出最近 3 小时的任务，照片地址和源视频地址都对得上就直接沿用那个任务（照片签名地址按任务创建时间生成，同一任务每次相同，不同任务一定不同）。列表请求失败时提交也失败（可重试的错误会重投），不会在查不了的情况下盲目创建。
   - 没配密钥、密钥失效、余额用完或账户被停用时，任务失败并退积分，同时立即触发“视频服务商账户”告警。NanoAPI 的 Key 没有月度额度，余额要自己在 NanoAPI 控制台盯着。结果每 30 秒轮询一次（文档要求间隔不少于 15 秒）。
-  - haomaotoken（`VIDEO_PROVIDER=haomao`，secret `HAOMAO_API_KEY`，配置在 `site.video.haomao`，代码在 `src/server/video/haomao.ts`）是火山引擎方舟的中转，用 Seedance 2.0（默认 `seedance-2.0-fast`）做参考生视频：照片是 image 1，模板源视频是 video 1，风格配了 `styles[].audio` 时，原曲由出片后的后处理容器合成（见“成片配乐”），不传给 Seedance：实测它不会照着参考音频出音轨。
-  - 方舟只读 haomaotoken 文件存储里的素材，所以每次提交都先把照片、源视频从 R2 读出来上传到 `/files/uploads`，不走签名地址。Seedance 单条最长 15 秒，`durations` 里超过 15 秒的档位会被接口拒绝（任务失败退积分），用 haomao 的站点要把最长档位改到 15 秒以内。
+  - haomaotoken（`VIDEO_PROVIDER=haomao`，secret `HAOMAO_API_KEY`，配置在 `site.video.haomao`，代码在 `src/server/video/haomao.ts`）是火山引擎方舟的中转，用 Seedance 2.0（默认 `seedance-2.0-fast`）做参考生视频：照片是 image 1，模板源视频是 video 1，风格配了 `styles[].audio`（每个时长档位一段音频，和源视频一样放 `seed/templates/` 并上传到 R2 的 `templates/`）时再带上 audio 1 做配乐，prompt 末尾自动加一句用它做背景音乐。
+  - 方舟只读 haomaotoken 文件存储里的素材，所以每次提交都先把照片、源视频（和配乐）从 R2 读出来上传到 `/files/uploads`，不走签名地址。Seedance 单条最长 15 秒，`durations` 里超过 15 秒的档位会被接口拒绝（任务失败退积分），用 haomao 的站点要把最长档位改到 15 秒以内。
   - 没有回调，每 30 秒轮询一次。任务失败时用同一请求体重提一次，第二次再失败才判失败退积分。创建任务没有幂等键，也不做去重：Worker 在建完任务、写库之前中断时，重投会再建一个任务（重复扣费），概率很低。
   - 密钥失效（401）、余额不足（402）、账户受限（403）时任务失败并退积分，同时立即触发“视频服务商账户”告警。haomaotoken 没有余额查询接口，余额告警不覆盖它，后台“测试连接”只确认配了 Key。
   - 未验证：模板只交付接入代码，调用方式照搬兄弟项目里跑通的 Seedance 调用（单元测试按它构造响应），没有在模板里用真实 key 跑过一单；`costCentsPerSecond: 10` 是估算，上线前按实际账单改。
@@ -456,7 +440,7 @@ src/content/            中英文文案
 src/routes/             页面（{-$locale} 为可选语言前缀，admin/ 为后台）
 src/server/             API：auth、credits、orders、payments/、video/、jobs（队列、死信与 Cron）、alerts（健康检查告警）、admin、seo、retention、takedown、moderation、turnstile、email（发件箱）、notifications（业务事件 → 邮件）、settings（运营设置）、probes（测试连接）、csp（内容安全策略）、client-error（前端错误上报）
 migrations/             D1 迁移
-containers/postprocess/ 成片后处理容器：合成原曲（/mux，已接入，见“成片配乐”）；烧录水印、C2PA 签名、封面和预览（/process，实验阶段，Worker 尚未接入）
+containers/postprocess/ 成片后处理容器：烧录水印、C2PA 签名、封面和预览（实验阶段，Worker 尚未接入，见 ROADMAP）
 seed/templates/         生成用的模板源视频
 .claude/skills/         Claude Code skill：new-hot-site（上新词）、sync-upstream（合并模板更新）、launch-audit（上线体检）
 scripts/                new-site（上新词）、doctor（部署前体检）、sync-plan（模板同步计划）、sync-secrets（密钥同步）、seo-check、indexnow、waffo-setup、dodo-setup、stripe-setup、webhook-proxy、seed-local、占位素材生成

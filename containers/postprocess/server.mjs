@@ -1,18 +1,15 @@
 // 成片后处理容器：ffmpeg 一次解码同时产出“带 AI 标识水印的成片 + 封面 + 预览短片”，再用 c2patool 写入 C2PA manifest。
 // POST /process?label=<水印文字>&title=<文件名>&generator=<品牌>&model=<模型名>  body = mp4
 //   → 200 multipart/form-data：video（mp4）、poster（jpg）、preview（mp4，无声、长边 480）、meta（JSON）
-// POST /mux  body = multipart/form-data：video（mp4）、audio（风格原曲）
-//   → 200 video/mp4：画面原样复制，音轨换成 audio（AAC），按较短的一方截断。不需要 C2PA 签名凭据
 // GET /health → 200 { ok, signer }
 // 单实例同时只处理一个任务，忙时返回 503 busy，由调用方（队列）重试。
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { createWriteStream, openAsBlob } from 'node:fs'
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, rm, stat, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 
 const env = process.env
@@ -129,47 +126,6 @@ export function transcodeArgs({ labeled, duration, fontFile = FONT_FILE, preset 
   ]
 }
 
-// 合成原曲：画面不重新编码（-c:v copy），音轨用 audio 的第一路，转成 AAC；-shortest 让成片长度跟较短的一方走
-export function muxArgs() {
-  return [
-    ...['-hide_banner', '-loglevel', 'error', '-y', '-i', 'video.mp4', '-i', 'audio'],
-    ...['-map', '0:v:0', '-map', '1:a:0', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '128k', '-shortest', '-movflags', '+faststart', 'out.mp4'],
-  ]
-}
-
-// 读 multipart 里的 video、audio 两个文件，写进任务目录后合成，返回成片字节
-async function muxJob(req) {
-  const length = Number(req.headers['content-length'] || 0)
-  if (length > MAX_INPUT_BYTES) throw new HttpError(413, 'input_too_large')
-  let form
-  try {
-    const request = new Request('http://container/mux', { method: 'POST', headers: req.headers, body: Readable.toWeb(req), duplex: 'half' })
-    form = await request.formData()
-  } catch {
-    throw new HttpError(400, 'invalid_form')
-  }
-  const video = form.get('video')
-  const audio = form.get('audio')
-  if (!(video instanceof Blob) || !(audio instanceof Blob)) throw new HttpError(400, 'missing_file')
-  if (video.size + audio.size > MAX_INPUT_BYTES) throw new HttpError(413, 'input_too_large')
-
-  const dir = join(tmpdir(), `mux-${randomUUID()}`)
-  await mkdir(dir, { recursive: true })
-  try {
-    await writeFile(join(dir, 'video.mp4'), Buffer.from(await video.arrayBuffer()))
-    await writeFile(join(dir, 'audio'), Buffer.from(await audio.arrayBuffer()))
-    await probe(join(dir, 'video.mp4'))
-    try {
-      await run(FFMPEG, muxArgs(), { cwd: dir })
-    } catch (err) {
-      throw new HttpError(422, 'mux_failed', String(err.message).slice(0, 300))
-    }
-    return { type: 'video/mp4', bytes: await readFile(join(dir, 'out.mp4')) }
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-}
-
 async function transcode(dir, label, meta) {
   if (label) await writeFile(join(dir, 'label.txt'), label)
   await run(FFMPEG, transcodeArgs({ labeled: Boolean(label), duration: meta.duration }), { cwd: dir })
@@ -270,15 +226,14 @@ function sendJson(res, status, body) {
 async function handle(req, res) {
   const url = new URL(req.url, 'http://container')
   if (req.method === 'GET' && url.pathname === '/health') return sendJson(res, 200, { ok: true, signer: signer?.kind ?? null })
-  const job = req.method === 'POST' ? { '/process': () => processJob(req, url), '/mux': () => muxJob(req) }[url.pathname] : undefined
-  if (!job) return sendJson(res, 404, { error: 'not_found' })
+  if (req.method !== 'POST' || url.pathname !== '/process') return sendJson(res, 404, { error: 'not_found' })
   if (busy) {
     req.resume()
     return sendJson(res, 503, { error: 'busy' })
   }
   busy = true
   try {
-    const { type, bytes } = await job()
+    const { type, bytes } = await processJob(req, url)
     res.writeHead(200, { 'content-type': type, 'content-length': bytes.length }).end(bytes)
   } catch (err) {
     const status = err instanceof HttpError ? err.status : 500

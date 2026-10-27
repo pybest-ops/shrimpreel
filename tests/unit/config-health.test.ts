@@ -60,9 +60,6 @@ describe('checkConfig', () => {
     expect(keys(ready({ vars: { VIDEO_PROVIDER: 'yir' }, secrets: { YIR_API_KEY: 'y' } }))).toEqual([])
     expect(keys(ready({ vars: { VIDEO_PROVIDER: 'nanoapi' } }))).toEqual(['error:NANOAPI_API_KEY'])
     expect(keys(ready({ vars: { VIDEO_PROVIDER: 'haomao' } }))).toEqual(['error:HAOMAO_API_KEY'])
-    // 配了原曲的风格要有后处理容器绑定
-    expect(keys({ ...ready(), audioStyleIds: ['moon-v1'] })).toEqual(['error:POSTPROCESS'])
-    expect(keys({ ...ready(), audioStyleIds: ['moon-v1'], bindings: [...REQUIRED_BINDINGS, 'POSTPROCESS'] })).toEqual([])
     expect(keys(ready({ secrets: { SESSION_SECRET: 'change-me-to-a-long-random-string' } }))).toEqual(['error:SESSION_SECRET'])
     expect(keys(ready({ secrets: { SESSION_SECRET: ' ' } }))).toEqual(['error:SESSION_SECRET'])
     expect(keys(ready({ secrets: { SESSION_SECRET: true } }))).toEqual([])

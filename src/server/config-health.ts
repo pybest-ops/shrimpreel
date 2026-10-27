@@ -17,8 +17,6 @@ export interface ConfigInput {
   packageIds: readonly string[]
   // 在售的订阅套餐 id（sellingPlans，订阅开关关掉时为空），同样要在 *_PRODUCTS 里有商品
   planIds?: readonly string[]
-  // 配了原曲的风格 id（audioStyleIds），有就要求 POSTPROCESS 容器绑定
-  audioStyleIds?: readonly string[]
   siteDomain: string
 }
 
@@ -96,10 +94,6 @@ export function checkConfig(input: ConfigInput): ConfigIssue[] {
 
   const missingBindings = REQUIRED_BINDINGS.filter((name) => !input.bindings.includes(name))
   if (missingBindings.length) error('bindings', `缺少绑定：${missingBindings.join('、')}`)
-  const audioStyles = input.audioStyleIds ?? []
-  if (audioStyles.length && !input.bindings.includes('POSTPROCESS')) {
-    error('POSTPROCESS', `风格 ${audioStyles.join('、')} 配了原曲（styles[].audio），但没有 POSTPROCESS 容器绑定：生产环境成片会失败退积分。开启方法见 README 的“成片配乐”`)
-  }
 
   // 只有 Google 登录：不配就没人能登录
   if (!vars('GOOGLE_CLIENT_ID')) error('GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_ID 为空：站点只有 Google 登录，用户无法登录')

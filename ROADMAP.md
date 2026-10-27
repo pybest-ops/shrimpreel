@@ -144,7 +144,6 @@
    - ~~#34~~ 已完成（2026-10-25）。可选的 NanoAPI 视频服务商，见下文。
    - ~~#35~~ 已完成（2026-10-25）。多舞蹈风格（`site.styles`），见下文。
    - ~~#38~~ 已完成（2026-10-27）。可选的 haomaotoken（Seedance 2.0）视频服务商，见下文。
-   - ~~#39~~ 已完成（2026-10-27）。成片配乐：后处理容器的 `/mux` 接入 Worker，见下文。
 3. 第三批，变现：
    - ~~#6~~ 已完成（2026-10-21）。积分分批次与过期，见下文。
    - ~~#9~~ 已完成（2026-10-21）。兑换码，见下文。
@@ -205,17 +204,9 @@
 - 测试：`tests/unit/pricing.test.ts`（`packageMakes`、`cheapestPackageCovering`）、`tests/unit/llms.test.ts`、`tests/unit/alerts.test.ts`（余额阈值、聊天群去重）；e2e 2 个（生成器就地购买到积分到账；暂停收款时就地购买禁用）。
 - 未验证：线上聊天群实际收到告警（飞书关键词）；余额告警在真实 yir 账户上触发。
 
-**#39 成片配乐：后处理容器接入 Worker**（2026-10-27）
-
-- 风格新增可选 `styles[].audio`（每个时长档位一段原曲）。出片转存 R2 后，`jobs.ts` 调后处理容器新增的 `POST /mux`，ffmpeg 复制画面、音轨换成原曲，写回同一个 key（`src/server/postprocess.ts`）。
-- 容器是 Cloudflare Containers（`PostprocessContainer`，`@cloudflare/containers` 0.3.7，绑定 `POSTPROCESS`），模板默认不开，站点在 `wrangler.jsonc` 里加 containers、durable_objects、migrations 三段（README“成片配乐”）。doctor 和后台配置检查：配了原曲却没绑定时报错；doctor 的 `configBindings` 读入 durable_objects 绑定。
-- 错误：503、冷启动失败重投；4xx 判失败退积分；生产缺绑定判失败（`postprocess_not_configured`，加入账户告警）；本地开发缺绑定跳过。
-- 测试：`tests/unit/postprocess.test.ts`（读写、实例、错误分类），`config-health` 补一条；`/mux` 用本机 ffmpeg 跑通（无声视频 + mp3 → 15 秒 h264 + aac，缺文件 400、坏视频 422）。
-- 未验证：Docker 镜像构建和 Containers 实机；大文件（>50MB）时 Worker 内存。
-
 **#38 haomaotoken（Seedance 2.0）视频服务商**（2026-10-27）
 
-- 第四个可选 `VideoProvider`（`VIDEO_PROVIDER=haomao`，密钥 `HAOMAO_API_KEY`，配置 `site.video.haomao`）：照片 + 模板源视频做 Seedance 参考生视频。提交前把素材从 R2 上传到 haomaotoken 文件存储（`VideoSubmitInput` 新增 `imageKey`）。原曲不传给 Seedance，见 #39。
+- 第四个可选 `VideoProvider`（`VIDEO_PROVIDER=haomao`，密钥 `HAOMAO_API_KEY`，配置 `site.video.haomao`）：照片 + 模板源视频 + 可选参考配乐（新增的 `styles[].audio`）做 Seedance 参考生视频。提交前把素材从 R2 上传到 haomaotoken 文件存储（`VideoSubmitInput` 新增 `imageKey`、`audioKey`）。
 - 没有回调，轮询 30 秒；任务失败用原请求体重提一次（走 `VideoStatus.next`）；401/402/403 映射为账户错误并告警；没有余额接口，测试连接只确认配了 Key（`BalanceQuery` 新增 `unsupported`）。
 - 测试：`tests/unit/haomao.test.ts`（上传、请求体、配乐、错误映射、重提、成本），`config-health`、`providers`、`probes` 各补一条。
 - 未验证：没有用真实 key 在模板里跑过一单；配乐和成片音轨的效果、单价都要第一个站上线时核对。没有幂等去重，Worker 中断时可能重复建任务。

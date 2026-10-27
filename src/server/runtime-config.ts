@@ -1,4 +1,4 @@
-import { audioStyleIds, sellingPlans, site } from '#/config/site'
+import { sellingPlans, site } from '#/config/site'
 import { REQUIRED_BINDINGS, checkConfig } from './config-health'
 
 // 运行时配置检查：与部署前的 npm run doctor 同一套规则，按实际 env 检查（含 SESSION_SECRET 强度），只返回问题，不返回值。
@@ -9,10 +9,9 @@ export function configIssues(env: Env, paymentProvider?: string) {
   return checkConfig({
     vars: paymentProvider ? { ...strings, PAYMENT_PROVIDER: paymentProvider } : strings,
     secrets: strings,
-    bindings: [...REQUIRED_BINDINGS, 'POSTPROCESS'].filter((name) => record[name] != null),
+    bindings: REQUIRED_BINDINGS.filter((name) => record[name] != null),
     packageIds: site.packages.map((p) => p.id),
     planIds: sellingPlans.map((p) => p.id),
-    audioStyleIds,
     siteDomain: site.domain,
   })
 }

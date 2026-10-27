@@ -2,12 +2,11 @@ import { findDuration, findStyle } from '#/config/site'
 import { jobToken, signedUploadUrl, templateSourceUrl } from './media'
 import { expireStatements, generationRefundStatements } from './credits'
 import { notifyGenerationFinished } from './notifications'
-import { PostprocessError, muxStyleAudio, styleAudioKey } from './postprocess'
 import { reconcilePendingOrders } from './reconcile'
 import type { GenerationRow, UploadRow, VideoJobMessage } from './types'
 import { sweepExpiredMedia } from './retention'
 import { grantDueSubscriptions } from './subscriptions'
-import { isProduction, nowIso } from './util'
+import { nowIso } from './util'
 import { getVideoProvider } from './video'
 import { VideoProviderError } from './video/types'
 
@@ -142,6 +141,7 @@ async function submitGeneration(env: Env, generation: GenerationRow) {
       imageKey: upload.r2_key,
       sourceVideoUrl: templateSourceUrl(env, sourceFile),
       sourceVideoKey: `templates/${sourceFile}`,
+      audioKey: style.audio?.[duration.id] ? `templates/${style.audio[duration.id]}` : undefined,
       webhookUrl: webhookUrl.toString(),
       meta: baseMeta,
     })
@@ -218,21 +218,6 @@ async function pollGeneration(env: Env, generation: GenerationRow) {
       return
     }
     await env.MEDIA.put(outputKey, await source.arrayBuffer(), { httpMetadata: { contentType: 'video/mp4' } })
-  }
-  // 风格配了原曲：交给后处理容器把音轨换成原曲。本地开发没有容器绑定时跳过（成片保持原样）；
-  // 可重试的错误抛给队列，下次轮询会重新转存、重新合成；不可重试的判失败退积分
-  const audioKey = styleAudioKey(generation.template_id, generation.duration_id)
-  if (audioKey && (env.POSTPROCESS || isProduction(env))) {
-    try {
-      await muxStyleAudio(env, outputKey, audioKey)
-    } catch (error) {
-      if (error instanceof PostprocessError && !error.retryable) {
-        await env.MEDIA.delete(outputKey)
-        await failGeneration(env, generation.id, error.code, error.message)
-        return
-      }
-      throw error
-    }
   }
   const now = nowIso()
   const costCents = status.costCents ?? provider.costCents(generation.duration_seconds, generation.template_id)

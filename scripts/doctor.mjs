@@ -12,7 +12,7 @@ import { spawnSync } from 'node:child_process'
 import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import ts from 'typescript'
-import { audioStyleIds, sellingPlans, site } from '../src/config/site.ts'
+import { sellingPlans, site } from '../src/config/site.ts'
 import { checkConfig } from '../src/server/config-health.ts'
 
 export function readWranglerConfig(file) {
@@ -30,7 +30,6 @@ export function configBindings(config) {
     ...(config.queues?.producers ?? []).map((q) => q.binding),
     ...(config.ratelimits ?? []).map((r) => r.name),
     ...(config.send_email ?? []).map((e) => e.name),
-    ...(config.durable_objects?.bindings ?? []).map((d) => d.name),
   ].filter(Boolean)
 }
 
@@ -82,7 +81,6 @@ export function runDoctor(
     bindings: configBindings(config),
     packageIds,
     planIds,
-    audioStyleIds,
     siteDomain,
   })
   const error = (key, message) => issues.push({ level: 'error', key, message })

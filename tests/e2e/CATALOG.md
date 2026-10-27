@@ -296,7 +296,6 @@ e2e 跑在本地 dev server 上，支付、视频、审核服务商都是 mock�
 | Turnstile 浏览器端校验 | 需要真实站点密钥 | 服务端校验的单元测试 | 线上验证 |
 | OpenAI 图片审核的真实调用 | 需要 `OPENAI_API_KEY` | e2e 用 mock 拒绝；单元测试覆盖响应解析和失败时拒绝 | 线上验证 |
 | 运营参数在线上的生效延迟 | 本地 KV 没有边缘缓存，保存后立即生效；线上 `cacheTtl` 60 秒的实际表现要在部署后看 | 保存时直接刷新 KV；单元测试覆盖缓存读写 | 线上验证随第一个热词站 |
-| 成片配乐（后处理容器 `/mux`） | 需要 Docker 镜像和 Cloudflare Containers，e2e 的 mock 风格没有原曲 | `postprocess.test.ts` 覆盖 Worker 侧读写和错误分类；`/mux` 用本机 ffmpeg 手动跑通 | 第一个配了原曲的站点上线后实测一单 |
 | fal、yir、NanoAPI、haomaotoken、OpenAI 的测试连接 | 需要真实 key | `probes.test.ts` 按文档构造响应 | 第一个热词站配好 key 后在后台点一次 |
 | 限流（`UPLOAD_LIMITER`、`GENERATE_LIMITER`、`AUTH_LIMITER`） | 要在 60 秒内打满额度；本地 binding 的计数是否和线上一致没有核实过 | 无 | 线上手工验证 |
 | Queues 真实重试与死信、Cron 真实触发 | 真实死信要重试 10 次（约 35 分钟） | 用 `/api/dev/dead-letter`、`/api/dev/sweep`、`/api/dev/health-check` 等模拟 | 无 |
