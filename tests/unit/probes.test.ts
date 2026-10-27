@@ -8,6 +8,8 @@ const admin = { id: 'usr_admin', email: 'admin@example.com', role: 'admin' } as 
 const DODO_KEY = 'dodo_test_key_1234567890'
 // 积分包和订阅套餐都要有商品
 const ITEMS = [...site.packages, ...site.plans]
+// 探测只核对在卖的商品：站点关掉订阅时不查套餐
+const SOLD = [...site.packages, ...(site.subscriptionsEnabled ? site.plans : [])]
 const DODO_PRODUCTS = JSON.stringify(Object.fromEntries(ITEMS.map((pack) => [pack.id, `pdt_${pack.id}`])))
 
 type Reply = { status?: number; body?: unknown }
@@ -63,7 +65,7 @@ describe('支付探测', () => {
     const calls = stubFetch({ '/products/': dodoPrice({}) })
     const result = await probe('payment', dodo)
     expect(result).toMatchObject({ target: 'payment', provider: 'dodo', status: 'ok' })
-    expect(calls.map((c) => c.url)).toEqual(ITEMS.map((pack) => `https://test.dodopayments.com/products/pdt_${pack.id}`))
+    expect(calls.map((c) => c.url)).toEqual(SOLD.map((pack) => `https://test.dodopayments.com/products/pdt_${pack.id}`))
     expect(calls.every((c) => c.auth === `Bearer ${DODO_KEY}`)).toBe(true)
   })
 
@@ -101,7 +103,7 @@ describe('支付探测', () => {
     const calls = stubFetch({ '/v1/prices/': stripePrice() })
     const result = await probe('payment', { PAYMENT_PROVIDER: 'stripe', STRIPE_SECRET_KEY: STRIPE_KEY, STRIPE_PRODUCTS })
     expect(result).toMatchObject({ target: 'payment', provider: 'stripe', status: 'ok' })
-    expect(calls.map((c) => c.url)).toEqual(ITEMS.map((pack) => `https://api.stripe.com/v1/prices/price_${pack.id}`))
+    expect(calls.map((c) => c.url)).toEqual(SOLD.map((pack) => `https://api.stripe.com/v1/prices/price_${pack.id}`))
     expect(calls.every((c) => c.auth === `Bearer ${STRIPE_KEY}`)).toBe(true)
   })
 
@@ -122,7 +124,7 @@ describe('支付探测', () => {
     expect(result.message).toContain(`${cheap!.id}：Stripe 售价 ${cheap!.priceCents - 1} 低于`)
     expect(result.message).toContain(`${inactive!.id}：Price price_${inactive!.id} 已停用`)
     expect(result.message).toContain(`${wrongType!.id}：积分包要用一次性价格`)
-    expect(result.message).toContain(`${yearly.id}：Price 的扣款周期不是每年一次`)
+    if (site.subscriptionsEnabled) expect(result.message).toContain(`${yearly.id}：Price 的扣款周期不是每年一次`)
 
     stubFetch({ '/v1/prices/': stripePrice({ [cheap!.id]: { unit_amount: cheap!.priceCents + 100 } }) })
     expect(await probe('payment', stripe)).toMatchObject({ status: 'warn' })
