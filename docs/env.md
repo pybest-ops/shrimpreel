@@ -26,7 +26,7 @@
 | `DODO_PRODUCTS` | 同上 | 用 Dodo 时 | `scripts/dodo-setup.mjs` 可以生成 |
 | `STRIPE_ENVIRONMENT` | `test`、`live` | 用 Stripe 时 | webhook 里的 `livemode` 和它不一致时拒收；上线检查核对 `STRIPE_SECRET_KEY` 的前缀（`sk_test_` / `sk_live_`） |
 | `STRIPE_PRODUCTS` | JSON，值是 Price ID，如 `{"starter":"price_xxx"}` | 用 Stripe 时 | 积分包用一次性价格，订阅套餐用 recurring 价格。`scripts/stripe-setup.mjs` 可以生成 |
-| `VIDEO_PROVIDER` | `fal`、`yir`、`nanoapi`、`mock` | 是 | 模型和单价在 `site.video` 里配置，yir 的配置在 `site.video.yir`，NanoAPI 的在 `site.video.nanoapi` |
+| `VIDEO_PROVIDER` | `fal`、`yir`、`nanoapi`、`haomao`、`mock` | 是 | 模型和单价在 `site.video` 里配置，yir 的配置在 `site.video.yir`，NanoAPI 的在 `site.video.nanoapi`，haomaotoken 的在 `site.video.haomao` |
 | `MODERATION_PROVIDER` | `openai`、`none`、`mock` | 是 | 上传图片的审核方式。`none` 不审核，检查时给出警告 |
 | `GOOGLE_CLIENT_ID` | OAuth Client ID | 是 | 站点只有 Google 登录，留空就没人能登录 |
 | `UMAMI_ORIGIN` | 不带路径的 https 地址，如 `https://umami.example.com` | 否 | Umami 实例地址，留空则不代理。只在 Worker 端使用（`/s/script.js`、`/s/api/send` 同域代理），不进前端，页面源码里看不到实例域名；格式不对时检查给出警告。实例要带 GeoLite2 数据库（Vercel 上部署时设 `BUILD_GEO=1` 再重新部署）：代理把访客 IP 放进 `payload.ip`，Umami 据此查国家，没有数据库会返回 500。只有 `APP_ENV=production` 才转发上报和取脚本（其它环境 `/s/script.js` 返回空 JS），`/admin` 页面不转发 |
@@ -45,6 +45,7 @@
 | `STRIPE_SECRET_KEY`、`STRIPE_WEBHOOK_SECRET` | `PAYMENT_PROVIDER=stripe` | secret key（`sk_`）或受限 Key（`rk_`，权限见 [payments.md](payments.md) 的“Stripe”）；webhook 密钥是端点的 `whsec_...`。可选 secret，类型声明在 `src/env.d.ts` |
 | `FAL_KEY` | `VIDEO_PROVIDER=fal` | |
 | `YIR_API_KEY` | `VIDEO_PROVIDER=yir` | 可选 secret，类型声明在 `src/env.d.ts`。建议在 yir Console 给这个 Key 设月度额度，见 README 的“视频服务商” |
+| `HAOMAO_API_KEY` | `VIDEO_PROVIDER=haomao` | 可选 secret，类型声明在 `src/env.d.ts`。haomaotoken 没有余额查询接口，后台“测试连接”只确认配了 Key，见 README 的“视频服务商” |
 | `NANOAPI_API_KEY` | `VIDEO_PROVIDER=nanoapi` | 可选 secret，类型声明在 `src/env.d.ts`。NanoAPI 没有月度额度，余额用完提交会返回 402，见 README 的“视频服务商” |
 | `OPENAI_API_KEY` | `MODERATION_PROVIDER=openai` | 可选 secret，类型声明在 `src/env.d.ts` |
 | `TURNSTILE_SECRET_KEY` | 配了 `TURNSTILE_SITE_KEY` | 同上 |

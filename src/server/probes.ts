@@ -183,6 +183,7 @@ async function probeVideo(env: Env): Promise<Outcome> {
   if (result.status === 'forbidden') return warn(`${result.keyName} 有效，但没有 billing:usage:read 权限，查不到余额（不影响生成）`)
   if (result.status === 'http') return fail(`查询余额返回 HTTP ${result.code}`)
   if (result.status === 'unreadable') return warn('鉴权正常，但读不到余额')
+  if (result.status === 'unsupported') return warn(`${result.provider} 没有余额查询接口，只确认了 Key 已配置，没有验证它是否有效`)
   return balanceOutcome(result.amount, result.currency, result.provider)
 }
 

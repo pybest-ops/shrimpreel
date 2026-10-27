@@ -143,6 +143,7 @@
    - ~~#33~~ 已完成（2026-10-21）。可选的 yir.ai 视频服务商，见下文。
    - ~~#34~~ 已完成（2026-10-25）。可选的 NanoAPI 视频服务商，见下文。
    - ~~#35~~ 已完成（2026-10-25）。多舞蹈风格（`site.styles`），见下文。
+   - ~~#38~~ 已完成（2026-10-27）。可选的 haomaotoken（Seedance 2.0）视频服务商，见下文。
 3. 第三批，变现：
    - ~~#6~~ 已完成（2026-10-21）。积分分批次与过期，见下文。
    - ~~#9~~ 已完成（2026-10-21）。兑换码，见下文。
@@ -202,6 +203,13 @@
 - 告警通道：所有告警和 D1 备份失败同时发到 `PAYMENT_NOTIFY_WEBHOOK_URL`（KV 去重）；新增“视频服务商余额”告警，每小时查一次，低于 10 美元告警。余额查询抽成 `src/server/video-balance.ts`，测试连接共用。
 - 测试：`tests/unit/pricing.test.ts`（`packageMakes`、`cheapestPackageCovering`）、`tests/unit/llms.test.ts`、`tests/unit/alerts.test.ts`（余额阈值、聊天群去重）；e2e 2 个（生成器就地购买到积分到账；暂停收款时就地购买禁用）。
 - 未验证：线上聊天群实际收到告警（飞书关键词）；余额告警在真实 yir 账户上触发。
+
+**#38 haomaotoken（Seedance 2.0）视频服务商**（2026-10-27）
+
+- 第四个可选 `VideoProvider`（`VIDEO_PROVIDER=haomao`，密钥 `HAOMAO_API_KEY`，配置 `site.video.haomao`）：照片 + 模板源视频 + 可选参考配乐（新增的 `styles[].audio`）做 Seedance 参考生视频。提交前把素材从 R2 上传到 haomaotoken 文件存储（`VideoSubmitInput` 新增 `imageKey`、`audioKey`）。
+- 没有回调，轮询 30 秒；任务失败用原请求体重提一次（走 `VideoStatus.next`）；401/402/403 映射为账户错误并告警；没有余额接口，测试连接只确认配了 Key（`BalanceQuery` 新增 `unsupported`）。
+- 测试：`tests/unit/haomao.test.ts`（上传、请求体、配乐、错误映射、重提、成本），`config-health`、`providers`、`probes` 各补一条。
+- 未验证：没有用真实 key 在模板里跑过一单；配乐和成片音轨的效果、单价都要第一个站上线时核对。没有幂等去重，Worker 中断时可能重复建任务。
 
 **#37 第二套主题、右下角同意卡片、页脚“问问 AI”**（2026-10-26，参考竞品 rumpelstiltskinai.dance 的外观）
 

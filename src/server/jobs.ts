@@ -59,7 +59,7 @@ export async function storeOutputFromUrl(
   await env.MEDIA.put(key, bytes, { httpMetadata })
   return true
 }
-const POLL_DELAY_SECONDS: Record<string, number> = { mock: 2, fal: 20, yir: 20, nanoapi: 30 }
+const POLL_DELAY_SECONDS: Record<string, number> = { mock: 2, fal: 20, yir: 20, nanoapi: 30, haomao: 30 }
 
 export async function enqueueJob(env: Env, message: VideoJobMessage, delaySeconds = 0) {
   await env.VIDEO_QUEUE.send(message, delaySeconds > 0 ? { delaySeconds } : undefined)
@@ -138,8 +138,10 @@ async function submitGeneration(env: Env, generation: GenerationRow) {
       style,
       durationSeconds: generation.duration_seconds,
       imageUrl: await signedUploadUrl(env, upload.id, Date.parse(generation.created_at)),
+      imageKey: upload.r2_key,
       sourceVideoUrl: templateSourceUrl(env, sourceFile),
       sourceVideoKey: `templates/${sourceFile}`,
+      audioKey: style.audio?.[duration.id] ? `templates/${style.audio[duration.id]}` : undefined,
       webhookUrl: webhookUrl.toString(),
       meta: baseMeta,
     })

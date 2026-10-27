@@ -180,6 +180,13 @@ describe('视频服务商探测', () => {
     expect(await probe('video', { VIDEO_PROVIDER: 'nanoapi' })).toMatchObject({ status: 'fail', message: 'NANOAPI_API_KEY 未配置' })
   })
 
+  it('haomao：没有余额接口，只确认 Key 已配置（warn），没配 Key fail，不发请求', async () => {
+    const calls = stubFetch({})
+    expect(await probe('video', { VIDEO_PROVIDER: 'haomao', HAOMAO_API_KEY: 'hm_key_abcdefgh' })).toMatchObject({ status: 'warn', provider: 'haomao' })
+    expect(await probe('video', { VIDEO_PROVIDER: 'haomao' })).toMatchObject({ status: 'fail', message: 'HAOMAO_API_KEY 未配置' })
+    expect(calls).toHaveLength(0)
+  })
+
   it('上游报错里出现的密钥值被替换掉', async () => {
     const key = 'fal_secret_value_123'
     vi.stubGlobal('fetch', async () => {
