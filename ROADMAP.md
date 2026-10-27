@@ -209,7 +209,7 @@
 
 - 风格新增可选 `styles[].audio`（每个时长档位一段原曲）。出片转存 R2 后，`jobs.ts` 调后处理容器新增的 `POST /mux`，ffmpeg 复制画面、音轨换成原曲，写回同一个 key（`src/server/postprocess.ts`）。
 - 容器是 Cloudflare Containers（`PostprocessContainer`，`@cloudflare/containers` 0.3.7，绑定 `POSTPROCESS`），模板默认不开，站点在 `wrangler.jsonc` 里加 containers、durable_objects、migrations 三段（README“成片配乐”）。doctor 和后台配置检查：配了原曲却没绑定时报错；doctor 的 `configBindings` 读入 durable_objects 绑定。
-- 错误：503、冷启动失败重投；4xx 判失败退积分；生产缺绑定判失败（`postprocess_not_configured`，加入账户告警）；只在 production / staging 合成，本地开发跳过；站点加 `"dev": { "enable_containers": false }`，本地 dev 不需要 Docker。
+- 错误：503、冷启动失败重投；4xx 判失败退积分；生产缺绑定判失败（`postprocess_not_configured`，加入账户告警）；本地开发缺绑定跳过。
 - 测试：`tests/unit/postprocess.test.ts`（读写、实例、错误分类），`config-health` 补一条；`/mux` 用本机 ffmpeg 跑通（无声视频 + mp3 → 15 秒 h264 + aac，缺文件 400、坏视频 422）。
 - 未验证：Docker 镜像构建和 Containers 实机；大文件（>50MB）时 Worker 内存。
 

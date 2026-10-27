@@ -173,15 +173,13 @@ npx wrangler r2 object put <name>-media/templates/<file>.mp4 --file seed/templat
 
 - 原曲文件：每个时长档位一段（键 = `durations[].id`），长度和源视频一致，放在 `seed/templates/`，和源视频一样上传到 R2：`npx wrangler r2 object put <name>-media/templates/<file>.mp3 --file seed/templates/<file>.mp3 --content-type audio/mpeg --remote`。
 - 流程：成片转存 R2 之后，`jobs.ts` 把成片和原曲发给容器的 `POST /mux`（`containers/postprocess/server.mjs`），ffmpeg 原样复制画面、音轨换成原曲（AAC 128k），按较短的一方截断，再写回同一个 R2 key。代码在 `src/server/postprocess.ts`。
-- 容器忙（503）、冷启动失败或连不上时抛给队列重试，下次轮询会重新转存、重新合成；输入有问题（4xx）判失败退积分。生产环境没有容器绑定时也判失败退积分（`postprocess_not_configured`，触发“视频服务商账户”告警）。只在 production 和 staging 合成，本地开发跳过（成片保持服务商输出的音轨）。
-- 开启：在站点的 `wrangler.jsonc` 里加下面四项（模板默认不加，因为部署带容器的 Worker 需要本机或 CI 有 Docker，账号要 Workers Paid）。`npm run doctor` 和后台配置检查会在风格配了原曲却没有 `POSTPROCESS` 绑定时报错。
+- 容器忙（503）、冷启动失败或连不上时抛给队列重试，下次轮询会重新转存、重新合成；输入有问题（4xx）判失败退积分。生产环境没有容器绑定时也判失败退积分（`postprocess_not_configured`，触发“视频服务商账户”告警）；本地开发没有绑定时跳过合成。
+- 开启：在站点的 `wrangler.jsonc` 里加下面三段（模板默认不加，因为部署带容器的 Worker 需要本机或 CI 有 Docker，账号要 Workers Paid）。`npm run doctor` 和后台配置检查会在风格配了原曲却没有 `POSTPROCESS` 绑定时报错。
   ```jsonc
   "containers": [{ "class_name": "PostprocessContainer", "image": "./containers/postprocess/Dockerfile", "max_instances": 3, "instance_type": "basic" }],
   "durable_objects": { "bindings": [{ "name": "POSTPROCESS", "class_name": "PostprocessContainer" }] },
-  "migrations": [{ "tag": "postprocess-v1", "new_sqlite_classes": ["PostprocessContainer"] }],
-  "dev": { "enable_containers": false }
+  "migrations": [{ "tag": "postprocess-v1", "new_sqlite_classes": ["PostprocessContainer"] }]
   ```
-  最后一行让本地 `npm run dev` 不构建、不启动容器，不需要 Docker。
 - 同时开 3 个实例（`src/server/postprocess.ts` 的 `INSTANCES`，要和 `max_instances` 一致），每个实例一次处理一个任务，空闲 2 分钟后休眠。镜像构建时会从 GitHub 下载 c2patool（C2PA 签名用，`/mux` 不需要签名凭据）。
 - 未验证：`/mux` 只用本机 ffmpeg 跑过（无声视频 + mp3 → 15 秒 h264 + aac）；Docker 镜像和 Containers 实机没有跑过。
 

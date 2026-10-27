@@ -174,15 +174,13 @@ Video models can't reproduce the original song (in testing Seedance ignores refe
 
 - Audio files: one per duration (keyed by `durations[].id`), as long as the source video, kept in `seed/templates/` and uploaded to R2 like the source videos: `npx wrangler r2 object put <name>-media/templates/<file>.mp3 --file seed/templates/<file>.mp3 --content-type audio/mpeg --remote`.
 - Flow: once the clip is copied to R2, `jobs.ts` sends the clip and the song to the container's `POST /mux` (`containers/postprocess/server.mjs`). ffmpeg copies the video stream as is, replaces the audio with the song (AAC 128k), cuts to the shorter of the two and the result overwrites the same R2 key. Code in `src/server/postprocess.ts`.
-- A busy container (503), a failed cold start or a connection error is thrown back to the queue; the next poll copies and muxes again. Bad input (4xx) fails the job with a refund. In production a missing container binding also fails the job with a refund (`postprocess_not_configured`, which fires the "Video provider account" alert). Muxing only runs in production and staging; local dev skips it (the clip keeps the provider's audio).
-- To enable it, add these four entries to the site's `wrangler.jsonc` (the template leaves them out because deploying a Worker with containers needs Docker on your machine or in CI, and Workers Paid). `npm run doctor` and the admin config check report an error when a style has a song but there's no `POSTPROCESS` binding.
+- A busy container (503), a failed cold start or a connection error is thrown back to the queue; the next poll copies and muxes again. Bad input (4xx) fails the job with a refund. In production a missing container binding also fails the job with a refund (`postprocess_not_configured`, which fires the "Video provider account" alert); in local dev without a binding the step is skipped.
+- To enable it, add these three blocks to the site's `wrangler.jsonc` (the template leaves them out because deploying a Worker with containers needs Docker on your machine or in CI, and Workers Paid). `npm run doctor` and the admin config check report an error when a style has a song but there's no `POSTPROCESS` binding.
   ```jsonc
   "containers": [{ "class_name": "PostprocessContainer", "image": "./containers/postprocess/Dockerfile", "max_instances": 3, "instance_type": "basic" }],
   "durable_objects": { "bindings": [{ "name": "POSTPROCESS", "class_name": "PostprocessContainer" }] },
-  "migrations": [{ "tag": "postprocess-v1", "new_sqlite_classes": ["PostprocessContainer"] }],
-  "dev": { "enable_containers": false }
+  "migrations": [{ "tag": "postprocess-v1", "new_sqlite_classes": ["PostprocessContainer"] }]
   ```
-  The last line keeps local `npm run dev` from building or starting the container, so it doesn't need Docker.
 - Up to 3 instances (`INSTANCES` in `src/server/postprocess.ts`, keep it equal to `max_instances`), one job per instance at a time, asleep after 2 idle minutes. The image build downloads c2patool from GitHub (used for C2PA signing; `/mux` needs no signing credentials).
 - Not verified: `/mux` has only run with a local ffmpeg (silent video + mp3 → 15 s h264 + aac); the Docker image and real Containers haven't been run.
 
