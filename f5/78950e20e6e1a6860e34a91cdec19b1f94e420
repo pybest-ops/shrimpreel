@@ -1,0 +1,31 @@
+tests/unit/haomao.test.ts
+  s_196ab876eb3ce1::t_50a06c03c96480 1-165
+src/config/site.ts
+  s_196ab876eb3ce1::t_14eb95d930d261 265
+  s_196ab876eb3ce1::t_3c004f72e8cbab 113-126
+  s_196ab876eb3ce1::t_56874ce9685964 49-50
+src/server/video/types.ts
+  s_196ab876eb3ce1::t_3b75e4008cd369 9-10,13-14
+  s_196ab876eb3ce1::t_82c2346a41e508 32
+src/server/jobs.ts
+  s_196ab876eb3ce1::t_1aba63976c8a38 141,144
+  s_196ab876eb3ce1::t_07a32965764ac2 62
+src/server/video/haomao.ts
+  s_196ab876eb3ce1::t_1b22686313f07b 1-131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.11",
+  "base_commit_sha": "f578950e20e6e1a6860e34a91cdec19b1f94e420",
+  "prompts": {},
+  "sessions": {
+    "s_196ab876eb3ce1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4b50068a-6859-451d-a4d3-30c9d9e8d4e3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "muyun <muyun@tsign.cn>"
+    }
+  }
+}
