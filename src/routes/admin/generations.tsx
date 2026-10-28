@@ -34,6 +34,8 @@ type GenerationRow = {
   attempts: number
   refunded: number
   provider_cost_cents: number | null
+  // 主角以外填了照片的位置数；单人任务为 0
+  seat_count: number
   created_at: string
   completed_at: string | null
 }
@@ -103,6 +105,7 @@ function AdminGenerations() {
                 <th>任务</th>
                 <th>用户</th>
                 <th>模板 / 时长</th>
+                <th title="这条任务用了几张照片：主角 1 张，加上多人风格里填了照片的可选位置">位置数</th>
                 <th>状态</th>
                 <th>服务商</th>
                 <th title="成本为估算值；毛利 = 积分 × 每积分实收 − 成本">成本 / 毛利</th>
@@ -133,6 +136,9 @@ function AdminGenerations() {
                     <span className="block text-muted">
                       {g.duration_seconds}s · {g.credits_cost} 积分
                     </span>
+                  </td>
+                  <td className="text-xs" data-testid="generation-seats">
+                    {1 + g.seat_count}
                   </td>
                   <td>
                     <Status value={g.status} />

@@ -58,7 +58,7 @@ e2e 跑在本地 dev server 上，支付、视频、审核服务商都是 mock�
 - `generation.spec.ts` › `生成失败自动退回积分，失败任务没有视频`
   - 流水依次为 −full 档积分、+full 档积分；失败任务的 video 接口返回 404。
 - `generation.spec.ts` › `并发轮询只落库一次、成片不被误删；后台记录服务商成本与毛利，未出片的失败任务不记成本`
-  - 3 路并发 mock-finish 只落库一次，成片保留；mock 成本为 0，失败任务的成本为 NULL；后台显示毛利。
+  - 3 路并发 mock-finish 只落库一次，成片保留；mock 成本为 0，失败任务的成本为 NULL；后台显示毛利，单人任务的位置数为 1。
 - `generation.spec.ts` › `风格：不带 styleId 用默认风格，不存在的风格返回 400 invalid_style 且不扣积分`
   - 不存在的 styleId 返回 `invalid_style`，余额不变、没有任务；不带 styleId 时 `templateId` 是默认风格，扣 short 档积分。
 - `generation.spec.ts` › `首页切换 hero 标签与生成器同步，选第二个风格生成，记录里是所选风格；?style= 可预选`

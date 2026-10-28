@@ -211,6 +211,7 @@
 - 数据：迁移 `0016_generation_seats.sql`，主角照片仍在 `generations.upload_id`；清理跳过进行中任务的可选照片，举报下架时同一条成片的所有照片一起删除、拉黑，数据导出加 `generationSeats`。
 - 接口：`POST /api/generations` 接受 `seats: { seatId: uploadId }`，错误码 `invalid_seat`、`duplicate_photo`（按 id 和 sha256）、`seats_unsupported`。haomao 按风格里的位置顺序上传照片，prompt 由 `seatPrompt` 按实际填了的位置拼出。
 - 界面：生成器显示主角大格加可选格，可移除可选照片；授权文案换成“每张照片都已获得本人同意”。
+- 后台：生成任务列表加“位置数”列（主角 1 + 填了照片的可选位置）。
 - 测试：`haomao.test.ts`（拼 prompt、多图顺序）、`config-health` 补一条；e2e 1 个（未知位置、重复照片、正常出片，模板没有多人风格时跳过）。
 - 未验证：Seedance 一次替换多人的稳定性只在第一个站的干净底片上试过（5 人，第二版镜头顺序基本对上）。
 

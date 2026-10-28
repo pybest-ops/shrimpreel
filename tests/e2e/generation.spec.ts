@@ -107,6 +107,8 @@ test('并发轮询只落库一次、成片不被误删；后台记录服务商�
   const cell = (id: string) => page.getByTestId('admin-generations').locator('tr', { hasText: id }).getByTestId('generation-cost')
   await expect(cell(raced)).toHaveText(`$0.00毛利 ${formatPrice(Math.round(SHORT * perCredit!), 'USD')}`)
   await expect(cell(failed)).toHaveText('—')
+  // 单人任务只有主角一张照片
+  await expect(page.getByTestId('admin-generations').locator('tr', { hasText: raced }).getByTestId('generation-seats')).toHaveText('1')
   await page.goto('/admin')
   await expect(page.getByTestId('admin-margin')).toContainText('近 30 天服务商成本')
   await expect(page.getByTestId('admin-margin')).toContainText('估算毛利')
