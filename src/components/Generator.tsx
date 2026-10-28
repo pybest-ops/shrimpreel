@@ -1,13 +1,16 @@
 import { useRouterState } from '@tanstack/react-router'
 import { CircleAlert, CircleCheck, Download, Upload, X } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { STYLES, cheapestPackageCovering, defaultStyle, formatPrice, site, type StyleSeat } from '#/config/site'
 import { api, errorCode, isActiveGeneration, type Generation } from '#/lib/api'
 import { track } from '#/lib/attribution'
 import { useCheckout } from '#/lib/checkout'
-import { useContent, useLocale, useLocalePath } from '#/lib/i18n'
-import { signInHref, useSession } from '#/lib/session'
-import { AiBadge, ErrorText, GoogleIcon, LocalLink, Spinner, formatDate } from './ui'
+import { clearDraft, loadDraft, saveDraft } from '#/lib/generator-draft'
+import { useContent, useLocale } from '#/lib/i18n'
+import { useSession } from '#/lib/session'
+import { SignInModal } from './SignInModal'
+import { toast } from './Toast'
+import { AiBadge, ErrorText, LocalLink, Spinner, formatDate } from './ui'
 
 type Photo = { file: File; previewUrl: string; uploadId: string | null }
 // 主角照片的键；多人风格的可选位置用各自的 seat id
@@ -21,10 +24,9 @@ const POLL_MS = 3000
 export function Generator({ styleId: controlledStyleId, onStyleChange }: { styleId?: string; onStyleChange?: (id: string) => void } = {}) {
   const c = useContent()
   const g = c.generator
-  const lp = useLocalePath()
   const locale = useLocale()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
-  const { user, config, loading, refresh } = useSession()
+  const { user, loading, refresh } = useSession()
   const inputRef = useRef<HTMLInputElement>(null)
   // 文件选择框是共用的，点哪个格子就记下哪个位置
   const pickSeat = useRef<string>(MAIN)
@@ -44,6 +46,14 @@ export function Generator({ styleId: controlledStyleId, onStyleChange }: { style
   const photo = photos[MAIN] ?? null
   const [durationId, setDurationId] = useState<string>(site.durations[site.durations.length - 1]!.id)
   const [consent, setConsent] = useState(false)
+  // 点按钮时没勾选协议：把协议那一行滚到可见并短暂高亮
+  const consentRef = useRef<HTMLLabelElement>(null)
+  const [consentFlash, setConsentFlash] = useState(false)
+  // 没登录时点主按钮打开登录弹窗，不离开页面
+  const [signInOpen, setSignInOpen] = useState(false)
+  const closeSignIn = useCallback(() => setSignInOpen(false), [])
+  // 每张照片只上传一次：登录后自动上传和点生成时补传共用同一个请求
+  const inflight = useRef(new Map<File, Promise<string>>())
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [generation, setGeneration] = useState<Generation | null>(null)
@@ -58,6 +68,27 @@ export function Generator({ styleId: controlledStyleId, onStyleChange }: { style
   useEffect(() => () => {
     for (const item of Object.values(photosRef.current)) URL.revokeObjectURL(item.previewUrl)
   }, [])
+
+  // Google 登录回来：恢复跳转前暂存的照片和风格，然后删除暂存（见 generator-draft.ts）
+  useEffect(() => {
+    const draft = loadDraft()
+    if (!draft) return
+    clearDraft()
+    if (STYLES.some((s) => s.id === draft.styleId)) selectStyle(draft.styleId)
+    setPhotos(Object.fromEntries(Object.entries(draft.files).map(([seat, file]) => [seat, { file, previewUrl: URL.createObjectURL(file), uploadId: null }])))
+    // 只在挂载时恢复一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // 已登录时，把还没上传的照片传上去：登录前选的、登录弹窗里登录后的、暂存恢复的都走这里
+  useEffect(() => {
+    if (!user) return
+    for (const [seat, item] of Object.entries(photos)) {
+      if (!item.uploadId) uploadOnce(seat, item.file).catch((err) => setError(errorCode(err)))
+    }
+    // uploadOnce 内部按文件去重，这里只关心登录状态和照片变化
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, photos])
 
   // 轮询当前任务直到结束；结束后刷新余额（失败时积分已退回）
   useEffect(() => {
@@ -107,24 +138,53 @@ export function Generator({ styleId: controlledStyleId, onStyleChange }: { style
     setError(null)
     if (!(site.upload.contentTypes as readonly string[]).includes(file.type)) return setError('unsupported_file_type')
     if (file.size > site.upload.maxBytes) return setError('file_too_large')
+    // 已登录时由上面的 effect 立即上传；没登录时先只在本地预览
     setSeatPhoto(seat, { file, previewUrl: URL.createObjectURL(file), uploadId: null })
     setGeneration(null)
-    if (!user) return
-    try {
-      rememberUpload(seat, file, await upload(file))
-    } catch (err) {
-      setError(errorCode(err))
-    }
   }
 
-  // 拿到一个位置的 uploadId：没登录时选的照片在这里补传
-  async function ensureUpload(seat: string) {
-    const item = photos[seat]!
-    if (item.uploadId) return item.uploadId
-    const uploadId = await upload(item.file)
-    rememberUpload(seat, item.file, uploadId)
-    return uploadId
+  // 同一个文件只发一次上传请求，并发调用拿到同一个结果
+  function uploadOnce(seat: string, file: File) {
+    let pending = inflight.current.get(file)
+    if (!pending) {
+      pending = upload(file)
+        .then((uploadId) => {
+          rememberUpload(seat, file, uploadId)
+          return uploadId
+        })
+        .finally(() => inflight.current.delete(file))
+      inflight.current.set(file, pending)
+    }
+    return pending
   }
+
+  // 拿到一个位置的 uploadId：还没传完的等它传完
+  async function ensureUpload(seat: string) {
+    const item = photosRef.current[seat]!
+    return item.uploadId ?? uploadOnce(seat, item.file)
+  }
+
+  // 主按钮前的检查：先要有主角照片，再要勾选协议；不满足时顶部提示，协议那一行滚到可见并高亮
+  function checkReady() {
+    if (!photo) {
+      toast.warning(g.needPhoto)
+      return false
+    }
+    if (!consent) {
+      toast.warning(g.needConsent)
+      consentRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setConsentFlash(true)
+      setTimeout(() => setConsentFlash(false), 1600)
+      return false
+    }
+    return true
+  }
+
+  // Google 登录要整页跳转：跳之前把已选照片暂存到本地，回来后恢复
+  const keepPhotosForGoogle = useCallback(async () => {
+    const files = Object.fromEntries(Object.entries(photosRef.current).map(([seat, item]) => [seat, item.file]))
+    if (Object.keys(files).length) await saveDraft(styleId, files)
+  }, [styleId])
 
   async function generate() {
     if (!photo) return setError('invalid_upload')
@@ -301,7 +361,10 @@ export function Generator({ styleId: controlledStyleId, onStyleChange }: { style
         </div>
       </section>
 
-      <label className="flex items-start gap-3 text-xs leading-5 text-muted">
+      <label
+        ref={consentRef}
+        className={`flex items-start gap-3 rounded-lg text-xs leading-5 text-muted transition ${consentFlash ? 'bg-amber-50 ring-2 ring-amber-400 dark:bg-amber-950' : ''}`}
+      >
         <input
           type="checkbox"
           checked={consent}
@@ -319,9 +382,16 @@ export function Generator({ styleId: controlledStyleId, onStyleChange }: { style
             <Spinner />
           </div>
         ) : !user ? (
-          <a href={signInHref(config, pathname, lp('/sign-in'))} className="btn-primary w-full py-3.5" data-testid="generator-sign-up">
-            {config?.googleClientId && !config.emailSignIn ? <GoogleIcon /> : null} {g.ctaSignUp}
-          </a>
+          <button
+            type="button"
+            className="btn-primary w-full py-3.5"
+            onClick={() => {
+              if (checkReady()) setSignInOpen(true)
+            }}
+            data-testid="generator-sign-up"
+          >
+            {g.ctaSignUp}
+          </button>
         ) : shortfall > 0 && coverPack ? (
           <>
             <button
@@ -356,8 +426,10 @@ export function Generator({ styleId: controlledStyleId, onStyleChange }: { style
           <button
             type="button"
             className="btn-primary w-full py-3.5"
-            disabled={busy || !photo || !consent}
-            onClick={generate}
+            disabled={busy}
+            onClick={() => {
+              if (checkReady()) void generate()
+            }}
             data-testid="generate"
           >
             {submitting ? <Spinner /> : null}
@@ -370,11 +442,11 @@ export function Generator({ styleId: controlledStyleId, onStyleChange }: { style
             {shortfall > 0 ? ` · ${g.needMore(shortfall)}` : ''}
           </p>
         ) : null}
-        {user && photo && !consent && !generation ? <p className="text-center text-xs text-muted">{g.needConsent}</p> : null}
         <ErrorText code={error} />
       </div>
 
       {generation ? <GenerationResult generation={generation} onReset={reset} /> : null}
+      {signInOpen && !user ? <SignInModal redirect={pathname} onClose={closeSignIn} onBeforeGoogle={keepPhotosForGoogle} /> : null}
     </section>
   )
 }

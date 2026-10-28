@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { api, errorCode, type ClientConfig, type PublicUser } from './api'
 import { site } from '#/config/site'
 import { captureAttribution, track } from './attribution'
+import { clearDraft } from './generator-draft'
 
 type SessionState = {
   user: PublicUser | null
@@ -33,6 +34,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     await api('/api/auth/logout', { method: 'POST', json: {} })
+    // 退出登录时清掉生成器暂存的照片（generator-draft.ts）
+    clearDraft()
     setUser(null)
   }, [])
 

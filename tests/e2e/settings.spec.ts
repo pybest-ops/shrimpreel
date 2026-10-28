@@ -1,6 +1,6 @@
 import { expect, test, type APIRequestContext } from '@playwright/test'
 import { site } from '../../src/config/site'
-import { ORIGIN, content, credits, devLogin, durationCredits, json, ledger, post, uniqueEmail, uploadPhoto } from './helpers'
+import { ORIGIN, SHORTEST, content, credits, devLogin, json, ledger, post, uniqueEmail, uploadPhoto } from './helpers'
 
 // 运营设置是全站共享状态：每个用例前后都把所有参数恢复成默认值，避免影响其他用例
 const ADMIN_EMAIL = 'admin@example.com'
@@ -29,7 +29,7 @@ async function userWithUpload(request: APIRequestContext) {
   const { upload } = await json<{ upload: { id: string } }>(uploadPhoto(request), 201)
   return { user, uploadId: upload.id }
 }
-const generate = (request: APIRequestContext, uploadId: string) => post(request, '/api/generations', { uploadId, durationId: 'short' })
+const generate = (request: APIRequestContext, uploadId: string) => post(request, '/api/generations', { uploadId, durationId: SHORTEST.id })
 
 test.beforeAll(async ({ playwright }) => {
   admin = await playwright.request.newContext({ baseURL: ORIGIN })
@@ -222,7 +222,7 @@ test('全站每日生成上限：达到上限后返回 429 且不扣积分，调
 
   await setSettings({ generationDailyCap: 0 })
   await json(generate(request, uploadId), 201)
-  expect(await credits(request)).toBe(before - durationCredits('short'))
+  expect(await credits(request)).toBe(before - SHORTEST.credits)
 })
 
 test('后台运营设置页：只提交改动项、显示修改人、恢复默认；测试连接逐项给出结果并记审计', async ({ page }) => {

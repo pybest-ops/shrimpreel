@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { buyPackage, clawbackCredits, credits, devLogin, durationCredits, json, ledger, pkg, post, uniqueEmail, uploadPhoto } from './helpers'
+import { SHORTEST, buyPackage, clawbackCredits, credits, devLogin, json, ledger, pkg, post, uniqueEmail, uploadPhoto } from './helpers'
 
 const STARTER = pkg('starter').credits
 const PARTY = pkg('party')
@@ -108,12 +108,12 @@ test('付款金额或套餐与订单不符、找不到订单：不入账、告�
 })
 
 test('积分已部分消费后退款：最多扣到 0，流水记录实际扣除量', async ({ request }) => {
-  const short = durationCredits('short')
+  const short = SHORTEST.credits
   test.skip(STARTER <= short, `starter(${STARTER}) 扣完 short(${short}) 后没有剩余，无法构造“部分消费”`)
   await devLogin(request, uniqueEmail('clawback'))
   const orderId = await buyPackage(request, 'starter')
   const { upload } = await json<{ upload: { id: string } }>(uploadPhoto(request), 201)
-  await json(post(request, '/api/generations', { uploadId: upload.id, durationId: 'short' }), 201)
+  await json(post(request, '/api/generations', { uploadId: upload.id, durationId: SHORTEST.id }), 201)
   expect(await credits(request)).toBe(STARTER - short)
 
   await json(post(request, '/api/mock-payments/complete', { orderId, outcome: 'refunded' }))

@@ -2,6 +2,7 @@
 import { HeadContent, Outlet, Scripts, createRootRoute, useRouterState, type ErrorComponentProps } from '@tanstack/react-router'
 import { useEffect, useState, type ReactNode } from 'react'
 import { ConsentBanner } from '#/components/ConsentBanner'
+import { Toaster } from '#/components/Toast'
 import { Footer } from '#/components/Footer'
 import { Nav } from '#/components/Nav'
 import { LocalLink } from '#/components/ui'
@@ -77,6 +78,8 @@ function RootDocument({ children }: { children: ReactNode }) {
       </head>
       <body>
         <SessionProvider>{children}</SessionProvider>
+        {/* 全站轻提示（toast.warning 等） */}
+        <Toaster />
         {site.analytics.ga4Id ? <ConsentBanner ga4Id={site.analytics.ga4Id} /> : null}
         <Scripts />
       </body>

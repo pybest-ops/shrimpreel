@@ -73,11 +73,9 @@ export function plan(id: string) {
   return found
 }
 
-export function durationCredits(id: string) {
-  const found = site.durations.find((d) => d.id === id)
-  if (!found) throw new Error(`site.durations 里没有时长 ${id}`)
-  return found.credits
-}
+// 最便宜、最贵的时长档：用例按它们下单，不写死档位 id，派生站只留一档也成立
+export const SHORTEST = [...site.durations].sort((a, b) => a.credits - b.credits)[0]!
+export const LONGEST = [...site.durations].sort((a, b) => b.credits - a.credits)[0]!
 
 // 部分退款回收的积分：与 src/server/orders.ts 的 planRefund 同一公式（按金额比例四舍五入，封顶到剩余积分）
 export function clawbackCredits(order: { credits: number; priceCents: number }, refundedCents: number, alreadyRefundedCredits = 0) {

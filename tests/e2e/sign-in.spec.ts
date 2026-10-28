@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { ORIGIN, content, json, post, uniqueEmail } from './helpers'
+import { ORIGIN, PHOTO, content, json, post, uniqueEmail } from './helpers'
 
 const en = content.en
 
@@ -87,4 +87,33 @@ test('登录页：Google 按钮下方用邮箱验证码登录，登录后回到 
   await expect(page.getByTestId('email-resend')).toBeDisabled()
   await page.getByTestId('email-verify').click()
   await expect(page).toHaveURL(`${ORIGIN}/pricing`)
+})
+
+test('生成器：没照片、没勾选协议时点主按钮只出提示；没登录时弹出登录框，邮箱登录后照片还在', async ({ page }) => {
+  const g = en.generator
+  await page.goto('/')
+  const cta = page.getByTestId('generator-sign-up')
+  await cta.click()
+  await expect(page.getByTestId('toast')).toHaveText(g.needPhoto)
+  await expect(page.getByTestId('sign-in-modal')).toHaveCount(0)
+
+  await page.getByTestId('photo-input').setInputFiles(PHOTO)
+  await cta.click()
+  await expect(page.getByTestId('toast').filter({ hasText: g.needConsent })).toBeVisible()
+  await expect(page.getByTestId('sign-in-modal')).toHaveCount(0)
+
+  await page.getByTestId('consent').check()
+  await cta.click()
+  const modal = page.getByTestId('sign-in-modal')
+  await expect(modal).toBeVisible()
+  await modal.getByTestId('email-input').fill(uniqueEmail('modal'))
+  await modal.getByTestId('email-send-code').click()
+  await expect(modal.getByTestId('email-code')).toHaveValue(/^\d{6}$/)
+  await modal.getByTestId('email-verify').click()
+  // 登录后弹窗关闭，仍在首页，主角照片还在；新账号没有积分，主按钮变成购买
+  await expect(modal).toHaveCount(0)
+  await expect(page).toHaveURL(`${ORIGIN}/`)
+  // 单照片和多位置两种布局的预览都是 blob: 图片
+  await expect(page.getByTestId('generator').locator('img[src^="blob:"]')).toHaveCount(1)
+  await expect(page.getByTestId('generator-buy')).toBeVisible()
 })
