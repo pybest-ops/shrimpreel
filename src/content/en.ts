@@ -486,6 +486,9 @@ export function en(s: S) {
     },
     common: {
       loading: 'Loading…',
+      // 示例视频右上角的声音开关
+      unmute: 'Play sound',
+      mute: 'Mute',
       retry: 'Try again',
       home: 'Back to home',
       notFoundTitle: 'Page not found',

@@ -456,6 +456,8 @@ export function zh(s: S): Content {
     },
     common: {
       loading: '加载中…',
+      unmute: '播放声音',
+      mute: '静音',
       retry: '重试',
       home: '返回首页',
       notFoundTitle: '页面不存在',

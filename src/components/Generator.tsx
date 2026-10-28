@@ -12,6 +12,8 @@ import { AiBadge, ErrorText, GoogleIcon, LocalLink, Spinner, formatDate } from '
 type Photo = { file: File; previewUrl: string; uploadId: string | null }
 // 主角照片的键；多人风格的可选位置用各自的 seat id
 const MAIN = 'main'
+// 时长档位按个数分列（最多 3 列）：只卖一种时长时占满一行。Tailwind 需要写全类名
+const DURATION_COLUMNS: Record<number, string> = { 1: 'grid-cols-1', 2: 'grid-cols-2', 3: 'grid-cols-3' }
 
 const POLL_MS = 3000
 
@@ -274,7 +276,7 @@ export function Generator({ styleId: controlledStyleId, onStyleChange }: { style
       {/* 时长 */}
       <section className="space-y-3">
         <StepTitle n={STYLES.length > 1 ? 3 : 2}>{g.stepLength}</StepTitle>
-        <div className="grid grid-cols-3 gap-1 rounded-xl bg-bg-soft p-1" role="radiogroup" aria-label={g.stepLength}>
+        <div className={`grid gap-1 rounded-xl bg-bg-soft p-1 ${DURATION_COLUMNS[Math.min(site.durations.length, 3)]}`} role="radiogroup" aria-label={g.stepLength}>
           {site.durations.map((d) => {
             const active = d.id === durationId
             return (
@@ -419,7 +421,18 @@ function SeatGrid({
                   index === 0 ? 'border-solid border-ink/60' : 'border-dashed border-line hover:border-fg/40'
                 }`}
               >
-                {item ? <img src={item.previewUrl} alt="" className="absolute inset-0 size-full rounded-[10px] object-cover" /> : null}
+                {item ? (
+                  <img src={item.previewUrl} alt="" className="absolute inset-0 size-full rounded-[10px] object-cover" />
+                ) : (
+                  // 空格子：和单张上传框同样的上传图标
+                  <span className="absolute inset-x-0 top-1/2 grid -translate-y-[60%] place-items-center">
+                    <span className={`grid place-items-center rounded-full bg-ink text-ink-fg ${index === 0 ? 'size-11' : 'size-8'}`}>
+                      <Upload className={index === 0 ? 'size-5' : 'size-4'} />
+                    </span>
+                  </span>
+                )}
+                {/* 左上角序号：主角是 1，可选位置按顺序往后排 */}
+                <span className="absolute top-2 left-2 grid size-6 place-items-center rounded-full bg-ink text-xs font-semibold text-ink-fg">{index + 1}</span>
                 <span className={`relative rounded-md px-1.5 py-0.5 ${item ? 'bg-bg/85' : ''}`}>
                   <span className="block text-sm font-semibold">{label?.name ?? seat.id}</span>
                   <span className="block text-xs text-muted">{item ? g.change : index === 0 ? (label?.hint ?? g.addPhoto) : `${g.optional} · ${label?.hint ?? g.addPhoto}`}</span>
