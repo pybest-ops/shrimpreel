@@ -157,6 +157,14 @@ e2e 跑在本地 dev server 上，支付、视频、审核服务商都是 mock�
   - 4 种会被浏览器解析成站外地址的 redirect 都回到 `/dashboard`，没有任何请求发往站外；站内地址连同查询串和锚点保留。
 - `sign-in.spec.ts` › `登录页只显示已知错误码的文案：__proto__ 等原型属性名显示通用错误，页面不崩溃`
 
+### 邮箱验证码登录
+
+- `sign-in.spec.ts` › `邮箱验证码登录：发码后用验证码登录；错码、重复使用被拒；60 秒内不能重发`
+  - 邮箱大小写和首尾空格归一化；60 秒内重发返回 429 `too_soon`；错码 400 `invalid_code`；正确的码登录后 `/api/me` 是该邮箱，同一个码再用返回 400。
+- `sign-in.spec.ts` › `邮箱验证码登录：输错 5 次后正确的码也作废；格式不对的邮箱返回 400`
+- `sign-in.spec.ts` › `登录页：Google 按钮下方用邮箱验证码登录，登录后回到 redirect`
+  - 本地开发时验证码随接口返回并自动填上，重发按钮在倒计时内不可用，登录后跳到 redirect。
+
 ### 上线配置
 
 - `admin.spec.ts` › `后台概览显示上线配置检查：本地开发配置报错，接口只回传问题不回传密钥值`
@@ -294,6 +302,7 @@ e2e 跑在本地 dev server 上，支付、视频、审核服务商都是 mock�
 | 真实支付商的订阅续费、扣款失败，Dodo 的取消与撤销；Stripe 的异步付款方式和 `refund.failed` | test 模式触发不了续费和扣款失败（要等一个计费周期）；Dodo 的取消要 API 密钥有 Subscriptions 写入，模板的 test 密钥还没有 | 首付、激活、当月积分、门户和 Waffo 的取消由 sandbox 订阅用例覆盖（2026-10-21 手动跑过）；续费和扣款失败有按文档构造的映射单元测试，e2e 用 mock 订阅事件走同一套入账逻辑 | 补上密钥权限后重跑 Dodo 订阅用例；Stripe 退款后又失败时积分不会自动恢复，靠人工处理；第一个热词站上线后观察第一次真实续费 |
 | 真实视频生成和 `/api/webhooks/fal`、`/api/webhooks/yir`、`/api/webhooks/nanoapi` 的成功回调 | 需要 `FAL_KEY`、`YIR_API_KEY` 或 `NANOAPI_API_KEY`，每次调用要付费；e2e 用 mock 服务商，靠轮询完成 | yir 的提交、查询、错误映射、实际成本和两步走（合成首帧 → 动作参考）有 provider 契约单元测试（`yir.test.ts`，按 yir 文档构造响应），进入下一步的落库由 `jobs.test.ts` 覆盖；NanoAPI 的创建、去重、查询、错误映射和成本有 `nanoapi.test.ts`，haomaotoken 的上传、提交、重提和错误映射有 `haomao.test.ts`（没有用真实 key 跑过），2026-10-25 用真实 key 经隧道手动跑通一单（webhook、转存 R2、实际成本、列表去重字段）；smoke 巡检检查未签名回调返回 401 | fal、yir 的 webhook 回调在第一个热词站上线后观察 |
 | 真实发信与投递 | 本地 `send_email` binding 只模拟发送 | e2e 断言发件箱记录；单元测试覆盖渲染和重试 | 线上验证随第一个热词站 |
+| 登录验证码邮件的真实投递 | 本地不发信，验证码随接口返回 `devCode`；生产环境不返回 | 单元测试覆盖渲染；e2e 覆盖发码、校验、冷却和输错上限 | 上线后用非 Gmail 邮箱收一次 |
 | Google OAuth 与 One Tap 登录 | 需要真实 Google 账号，e2e 用 dev 登录 | 单元测试覆盖跳转校验、PKCE、nonce 和按 `sub` 绑定 | 线上验证随第一个热词站 |
 | Turnstile 浏览器端校验 | 需要真实站点密钥 | 服务端校验的单元测试 | 线上验证 |
 | OpenAI 图片审核的真实调用 | 需要 `OPENAI_API_KEY` | e2e 用 mock 拒绝；单元测试覆盖响应解析和失败时拒绝 | 线上验证 |

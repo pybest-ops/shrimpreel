@@ -145,6 +145,7 @@
    - ~~#35~~ 已完成（2026-10-25）。多舞蹈风格（`site.styles`），见下文。
    - ~~#38~~ 已完成（2026-10-27）。可选的 haomaotoken（Seedance 2.0）视频服务商，见下文。
    - ~~#40~~ 已完成（2026-10-27）。多人位置（`styles[].seats`），见下文。
+   - ~~#41~~ 已完成（2026-10-28）。邮箱验证码登录，见下文。
 3. 第三批，变现：
    - ~~#6~~ 已完成（2026-10-21）。积分分批次与过期，见下文。
    - ~~#9~~ 已完成（2026-10-21）。兑换码，见下文。
@@ -204,6 +205,14 @@
 - 告警通道：所有告警和 D1 备份失败同时发到 `PAYMENT_NOTIFY_WEBHOOK_URL`（KV 去重）；新增“视频服务商余额”告警，每小时查一次，低于 10 美元告警。余额查询抽成 `src/server/video-balance.ts`，测试连接共用。
 - 测试：`tests/unit/pricing.test.ts`（`packageMakes`、`cheapestPackageCovering`）、`tests/unit/llms.test.ts`、`tests/unit/alerts.test.ts`（余额阈值、聊天群去重）；e2e 2 个（生成器就地购买到积分到账；暂停收款时就地购买禁用）。
 - 未验证：线上聊天群实际收到告警（飞书关键词）；余额告警在真实 yir 账户上触发。
+
+**#41 邮箱验证码登录**（2026-10-28，参考兄弟项目 kda 的交互）
+
+- 登录页 Google 按钮下方加邮箱验证码登录（`src/components/EmailSignIn.tsx`）：填邮箱发码 → 输 6 位验证码，60 秒倒计时重发、可换邮箱。接口 `/api/auth/email/start`、`/api/auth/email/verify`，规则在 `src/server/email-login.ts`。
+- 和 kda 的差别：验证码存 HMAC（`SESSION_SECRET` 作密钥）而不是裸 SHA-256；加了 IP 限流和每邮箱每小时 5 次上限；验证码邮件不进发件箱。迁移 `0017_email_login_codes.sql`，Cron 清理过期一天以上的记录，注销账号时删除。
+- 开了邮箱登录时 `signInHref` 去登录页（不再直接跳 Google），生成器注册按钮去掉 Google 图标；`sign_up` 统计按实际方式记 `email`。
+- 测试：`email-login.test.ts`（归一化、6 位码、HMAC、邮件渲染）；e2e 3 个（发码登录、错码与重复使用、冷却、输错上限、登录页流程）。
+- 未验证：线上真实收信（上线后用非 Gmail 邮箱收一次）。
 
 **#40 多人位置**（2026-10-27）
 

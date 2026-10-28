@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { ORIGIN, content, uniqueEmail } from './helpers'
+import { ORIGIN, content, json, post, uniqueEmail } from './helpers'
 
 const en = content.en
 
@@ -47,4 +47,44 @@ test('登录页只显示已知错误码的文案：__proto__ 等原型属性名�
   await page.goto('/sign-in?error=oauth_state')
   await expect(page.getByRole('alert')).toHaveText(en.errors.oauth_state)
   expect(pageErrors).toEqual([])
+})
+
+// 邮箱验证码登录：非生产环境发码接口直接返回 devCode
+type Start = { ok: boolean; cooldownSeconds: number; devCode?: string }
+
+test('邮箱验证码登录：发码后用验证码登录；错码、重复使用被拒；60 秒内不能重发', async ({ request }) => {
+  const email = uniqueEmail('email-code')
+  const start = await json<Start>(post(request, '/api/auth/email/start', { email: `  ${email.toUpperCase()} `, locale: 'en' }))
+  expect(start.devCode).toMatch(/^\d{6}$/)
+  expect(start.cooldownSeconds).toBe(60)
+  expect((await json<{ error: string }>(post(request, '/api/auth/email/start', { email, locale: 'en' }), 429)).error).toBe('too_soon')
+
+  const wrong = start.devCode === '000000' ? '000001' : '000000'
+  expect((await json<{ error: string }>(post(request, '/api/auth/email/verify', { email, code: wrong }), 400)).error).toBe('invalid_code')
+  const { user } = await json<{ user: { email: string } }>(post(request, '/api/auth/email/verify', { email, code: start.devCode }))
+  expect(user.email).toBe(email)
+  expect((await json<{ user: { email: string } }>(request.get('/api/me'))).user.email).toBe(email)
+  // 一个码只能用一次
+  expect((await json<{ error: string }>(post(request, '/api/auth/email/verify', { email, code: start.devCode }), 400)).error).toBe('invalid_code')
+})
+
+test('邮箱验证码登录：输错 5 次后正确的码也作废；格式不对的邮箱返回 400', async ({ request }) => {
+  expect((await json<{ error: string }>(post(request, '/api/auth/email/start', { email: 'not-an-email' }), 400)).error).toBe('invalid_email')
+  const email = uniqueEmail('email-lockout')
+  const { devCode } = await json<Start>(post(request, '/api/auth/email/start', { email }))
+  const wrong = devCode === '000000' ? '000001' : '000000'
+  for (let i = 0; i < 5; i += 1) await json(post(request, '/api/auth/email/verify', { email, code: wrong }), 400)
+  expect((await json<{ error: string }>(post(request, '/api/auth/email/verify', { email, code: devCode }), 400)).error).toBe('invalid_code')
+  expect((await json<{ user: null }>(request.get('/api/me'))).user).toBeNull()
+})
+
+test('登录页：Google 按钮下方用邮箱验证码登录，登录后回到 redirect', async ({ page }) => {
+  await page.goto(`/sign-in?redirect=${encodeURIComponent('/pricing')}`)
+  await page.getByTestId('email-input').fill(uniqueEmail('email-ui'))
+  await page.getByTestId('email-send-code').click()
+  // 本地开发时验证码随接口返回并自动填上
+  await expect(page.getByTestId('email-code')).toHaveValue(/^\d{6}$/)
+  await expect(page.getByTestId('email-resend')).toBeDisabled()
+  await page.getByTestId('email-verify').click()
+  await expect(page).toHaveURL(`${ORIGIN}/pricing`)
 })

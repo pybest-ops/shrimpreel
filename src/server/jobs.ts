@@ -317,6 +317,8 @@ export async function runScheduledMaintenance(env: Env) {
   const now = nowIso()
   await db.batch([
     db.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(now),
+    // 过期超过一天的登录验证码（留一天是为了让每小时发送上限的计数不被提前清掉）
+    db.prepare('DELETE FROM email_login_codes WHERE expires_at < ?').bind(new Date(Date.now() - 24 * 3600_000).toISOString()),
     db
       .prepare(`UPDATE orders SET status = 'canceled', updated_at = ? WHERE status = 'pending' AND created_at < ?`)
       .bind(now, new Date(Date.now() - 24 * 3600_000).toISOString()),

@@ -9,6 +9,18 @@ import { runHealthCheck } from './alerts'
 import { backupDatabase } from './backup'
 import { classifyTouch, deviceFromUserAgent, requestAttribution, sanitizeTouch } from './attribution'
 import { deletedEmailHash, endSession, loadSessionUser, publicUser, startSession, upsertUser } from './auth'
+import {
+  CODE_MAX_ATTEMPTS,
+  CODE_MAX_SENDS_PER_HOUR,
+  CODE_RESEND_COOLDOWN_SECONDS,
+  CODE_TTL_MINUTES,
+  codeHash,
+  emailSignInEnabled,
+  generateCode,
+  isValidEmail,
+  normalizeEmail,
+  sendLoginCode,
+} from './email-login'
 import { CLIENT_ERROR_PATH, summarizeClientError } from './client-error'
 import { clawbackStatements, expireStatements, ledgerStatements } from './credits'
 import { CSP_REPORT_PATH, summarizeCspReports } from './csp'
@@ -116,6 +128,8 @@ app.get('/api/me', async (c) => {
     config: {
       googleClientId: googleClientId(c.env) ?? null,
       devLogin: !isProduction(c.env),
+      // 邮箱验证码登录：生产环境配好发信才开
+      emailSignIn: emailSignInEnabled(c.env),
       paymentProvider: settings.paymentProvider || c.env.PAYMENT_PROVIDER,
       turnstileSiteKey: turnstileSiteKey(c.env),
       notice: publicNotice(settings),
@@ -225,6 +239,92 @@ app.post('/api/auth/dev-login', async (c) => {
     googleSub: null,
     country: null,
     locale: null,
+    attribution: requestAttribution(c, 'first'),
+    referral: await requestReferral(c),
+  })
+  await startSession(c, user.id)
+  return c.json({ user: publicUser(user) })
+})
+
+// 邮箱验证码登录第一步：发码。不管邮箱有没有注册过都返回同样的结果，不暴露账号是否存在；
+// 按 IP 限流，同一邮箱 60 秒冷却、每小时最多 5 次；非生产环境把验证码随响应返回（devCode），方便本地和 e2e
+app.post('/api/auth/email/start', async (c) => {
+  const ip = c.req.header('cf-connecting-ip') ?? undefined
+  await rateLimit(c.env.AUTH_LIMITER, `email-code:${ip ?? 'local'}`)
+  if (!emailSignInEnabled(c.env)) throw new ApiError(503, 'email_signin_unavailable')
+  const body = await readJson<{ email: string; locale: string; turnstileToken: string }>(c)
+  const email = normalizeEmail(String(body.email ?? ''))
+  if (!isValidEmail(email)) throw new ApiError(400, 'invalid_email')
+  await verifyTurnstile(c.env, body.turnstileToken, ip)
+
+  const db = c.env.DB
+  const now = Date.now()
+  const row = await db
+    .prepare('SELECT created_at, window_started_at, sends_in_window FROM email_login_codes WHERE email = ?')
+    .bind(email)
+    .first<{ created_at: string; window_started_at: string; sends_in_window: number }>()
+  if (row && now - Date.parse(row.created_at) < CODE_RESEND_COOLDOWN_SECONDS * 1000) throw new ApiError(429, 'too_soon')
+  // 每小时窗口：窗口过了就重新计数
+  const sameWindow = row !== null && now - Date.parse(row.window_started_at) < 3600_000
+  if (sameWindow && row.sends_in_window >= CODE_MAX_SENDS_PER_HOUR) throw new ApiError(429, 'too_many_codes')
+
+  const code = generateCode()
+  const nowText = new Date(now).toISOString()
+  // 新码覆盖旧码、输错次数清零；先写库再发信，发信失败时用户点重发（会受 60 秒冷却限制）
+  await db
+    .prepare(
+      `INSERT INTO email_login_codes (email, code_hash, expires_at, attempts, window_started_at, sends_in_window, created_at)
+       VALUES (?1, ?2, ?3, 0, ?4, 1, ?4)
+       ON CONFLICT(email) DO UPDATE SET code_hash = ?2, expires_at = ?3, attempts = 0, created_at = ?4,
+         window_started_at = ?5, sends_in_window = ?6`,
+    )
+    .bind(
+      email,
+      await codeHash(c.env, email, code),
+      new Date(now + CODE_TTL_MINUTES * 60_000).toISOString(),
+      nowText,
+      sameWindow ? row.window_started_at : nowText,
+      sameWindow ? row.sends_in_window + 1 : 1,
+    )
+    .run()
+  await sendLoginCode(c.env, email, code, typeof body.locale === 'string' ? body.locale : null)
+  return c.json({ ok: true, cooldownSeconds: CODE_RESEND_COOLDOWN_SECONDS, ...(isProduction(c.env) ? {} : { devCode: code }) })
+})
+
+// 邮箱验证码登录第二步：校验并登录。过期、输错次数用完或不存在都按 invalid_code 处理；
+// 校验通过后按哈希删除这条记录，并发提交同一个码只有一个能登录。账号合并沿用 upsertUser（按邮箱找人，邮箱已由验证码证明）
+app.post('/api/auth/email/verify', async (c) => {
+  await rateLimit(c.env.AUTH_LIMITER, `email-verify:${c.req.header('cf-connecting-ip') ?? 'local'}`)
+  const body = await readJson<{ email: string; code: string; locale: string }>(c)
+  const email = normalizeEmail(String(body.email ?? ''))
+  const code = String(body.code ?? '').trim()
+  if (!isValidEmail(email) || !/^\d{6}$/.test(code)) throw new ApiError(400, 'invalid_code')
+
+  const db = c.env.DB
+  const row = await db
+    .prepare('SELECT code_hash, expires_at, attempts FROM email_login_codes WHERE email = ?')
+    .bind(email)
+    .first<{ code_hash: string; expires_at: string; attempts: number }>()
+  if (!row) throw new ApiError(400, 'invalid_code')
+  if (Date.now() >= Date.parse(row.expires_at) || row.attempts >= CODE_MAX_ATTEMPTS) {
+    await db.prepare('DELETE FROM email_login_codes WHERE email = ?').bind(email).run()
+    throw new ApiError(400, 'invalid_code')
+  }
+  const hash = await codeHash(c.env, email, code)
+  if (!constantTimeEqual(hash, row.code_hash)) {
+    await db.prepare('UPDATE email_login_codes SET attempts = attempts + 1 WHERE email = ?').bind(email).run()
+    throw new ApiError(400, 'invalid_code')
+  }
+  const consumed = await db.prepare('DELETE FROM email_login_codes WHERE email = ? AND code_hash = ?').bind(email, hash).run()
+  if (!consumed.meta.changes) throw new ApiError(400, 'invalid_code')
+
+  const user = await upsertUser(c.env, {
+    email,
+    name: null,
+    picture: null,
+    googleSub: null,
+    country: c.req.header('cf-ipcountry') ?? null,
+    locale: typeof body.locale === 'string' && isLocale(body.locale) ? body.locale : null,
     attribution: requestAttribution(c, 'first'),
     referral: await requestReferral(c),
   })
@@ -878,6 +978,7 @@ app.delete('/api/account', async (c) => {
     db.prepare('DELETE FROM generations WHERE user_id = ?').bind(user.id),
     db.prepare('DELETE FROM uploads WHERE user_id = ?').bind(user.id),
     db.prepare('DELETE FROM email_outbox WHERE user_id = ?').bind(user.id),
+    db.prepare('DELETE FROM email_login_codes WHERE email = ?').bind(user.email),
     ...clawbackStatements(db, {
       userId: user.id,
       maxAmount: 1_000_000_000, // 全部剩余积分

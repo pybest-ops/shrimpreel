@@ -320,7 +320,7 @@ export function Generator({ styleId: controlledStyleId, onStyleChange }: { style
           </div>
         ) : !user ? (
           <a href={signInHref(config, pathname, lp('/sign-in'))} className="btn-primary w-full py-3.5" data-testid="generator-sign-up">
-            <GoogleIcon /> {g.ctaSignUp}
+            {config?.googleClientId && !config.emailSignIn ? <GoogleIcon /> : null} {g.ctaSignUp}
           </a>
         ) : shortfall > 0 && coverPack ? (
           <>

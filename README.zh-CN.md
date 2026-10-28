@@ -23,7 +23,7 @@ https://github.com/user-attachments/assets/895aab94-d0c9-474e-8d90-61a6c551e536
 - 支付：Waffo Pancake（默认）、Dodo Payments，均为 MoR；也可用 Stripe（你自己是商户，销售税自己处理）；`mock` 仅用于本地和 e2e
 - 视频：fal.ai queue API（默认），可选 [yir.ai](https://yir.ai/?ref=qianshuixia) 网关、[NanoAPI](https://nanoapi.ai) 或 haomaotoken（Seedance 2.0）；`mock` 仅用于本地和 e2e。见下文“视频服务商”
 - 已具备：
-  - 用户与积分：Google 登录（含 One Tap）、积分包、月付和年付订阅、积分流水、个人中心（视频/账单/设置/兑换码/邀请链接/注销/导出我的数据）；账单显示实付与退款，订单和积分流水可分页加载，每笔订单有可打印的详情页（税务发票由支付商出具）
+  - 用户与积分：Google 登录（含 One Tap）和邮箱验证码登录、积分包、月付和年付订阅、积分流水、个人中心（视频/账单/设置/兑换码/邀请链接/注销/导出我的数据）；账单显示实付与退款，订单和积分流水可分页加载，每笔订单有可打印的详情页（税务发票由支付商出具）
   - 订单与生成：订单与部分/全额退款回收、生成任务队列（含死信队列）与失败退积分
   - 增长与运营：来源归因（UTM 与广告点击 ID，首次和最近触达）、访问 → 注册 → 下单 → 支付 → 生成漏斗、GA4 事件（带同意横幅）、成片公开分享页（用户自己开启，带链接预览图）
   - 管理后台：概览（含服务商成本与毛利）、用户、订单、生成、举报下架、留言、支付事件、邮件、审计、经营报表与订单 CSV、兑换码、邀请排行、运营设置与测试连接
@@ -295,6 +295,7 @@ SMOKE_BASE_URL=https://video-template-staging.<子域名>.workers.dev SMOKE_EXPE
   - 登录后的 `redirect`（登录页和 Google 回调）只接受站内路径：`src/lib/redirect.ts` 拒绝反斜杠、控制字符，以及规范化后以 `//` 开头的地址，所以 `/sign-in?redirect=/\evil.com` 这类链接会落到个人中心。
   - 5xx 错误只对管理员返回 `message`；其他人只拿到错误码，详情以 `[api] <method> <path> <code>: <message>` 写入 Workers Logs。
   - Google 登录：授权码流程带 PKCE（S256）和 nonce；One Tap 初始化前先从 `/api/auth/google/nonce` 取 nonce（同时写进 cookie），提交时两者必须一致。
+  - 邮箱验证码登录（没有 Google 账号的用户用）：登录页 Google 按钮下方填邮箱，`POST /api/auth/email/start` 发 6 位验证码（10 分钟有效），`POST /api/auth/email/verify` 校验后登录。库里只存以 `SESSION_SECRET` 为密钥的 HMAC（迁移 0017 `email_login_codes`）；同一邮箱 60 秒冷却、每小时最多 5 次，按 IP 限流，配了 Turnstile 时发码要过人机校验；输错 5 次作废，校验通过后按哈希删除，一个码只能用一次。不管邮箱有没有注册都返回同样的结果。验证码邮件直接发出、不进发件箱（不在库里留明文）；生产环境要配好发信才开（`/api/me` 的 `config.emailSignIn`），不需要新的环境变量。账号按邮箱合并：同一邮箱用 Google 或验证码登录是同一个账号。开了邮箱登录时，生成器的“注册”按钮先进登录页让用户选方式；本地开发时验证码随接口返回 `devCode` 并自动填上。
   - 账号以 Google 的 `sub` 为准：同一邮箱换了 Google 账号（`sub` 不同）会被拒绝登录，登录页提示联系客服（`account_conflict`）；dev 登录建的账号（没有 `sub`）在第一次 Google 登录时绑定。
   - 注销账号只保留邮箱的加盐哈希（`deleted_accounts` 表，盐是 `SESSION_SECRET`），同一邮箱重新注册时不发注册赠送、不绑定邀请人。更换 `SESSION_SECRET` 后旧记录对不上。
   - 上传请求必须带 `Content-Length`（否则 411），超过上限直接 413，不读请求体。服务商成片超过 100 MB 判失败并退积分；带长度时流式写入 R2，没带长度时边读边计数，超过 48 MB 即停止。

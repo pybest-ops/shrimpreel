@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useState, type FormEvent } from 'react'
+import { EmailSignIn } from '#/components/EmailSignIn'
 import { ErrorText, GoogleIcon, LocalLink, LogoMark, Spinner } from '#/components/ui'
 import { api, errorCode } from '#/lib/api'
 import { getContent, localeFromParam, pageHead, useContent, useLocalePath } from '#/lib/i18n'
@@ -66,9 +67,22 @@ function SignInPage() {
           <a href={`/api/auth/google/start?redirect=${encodeURIComponent(redirect)}`} className="btn-primary w-full py-3.5">
             <GoogleIcon /> {t.google}
           </a>
-        ) : (
+        ) : config?.emailSignIn ? null : (
           <p className="text-sm text-muted">{t.notConfigured}</p>
         )}
+        {/* 邮箱验证码登录：在 Google 按钮下面，用“或”分隔；没配 Google 时单独出现 */}
+        {!loading && config?.emailSignIn ? (
+          <>
+            {config.googleClientId ? (
+              <div className="flex items-center gap-3 text-xs text-muted">
+                <span className="h-px flex-1 bg-line" />
+                {t.or}
+                <span className="h-px flex-1 bg-line" />
+              </div>
+            ) : null}
+            <EmailSignIn />
+          </>
+        ) : null}
         {config?.devLogin ? (
           <form onSubmit={devLogin} className="space-y-3 border-t border-line pt-6 text-left">
             <p className="text-xs font-semibold tracking-wide text-muted uppercase">{t.devTitle}</p>
