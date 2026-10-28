@@ -31,7 +31,7 @@ export function generateCode() {
 
 // 验证码的 HMAC：以 SESSION_SECRET 作密钥，库泄露也不能离线枚举出验证码。
 // 生产环境密钥缺失或过弱时拒绝，和媒体签名同一规则；本地开发没配密钥时用固定值
-export async function codeHash(env: Pick<Env, 'SESSION_SECRET' | 'APP_ENV'>, email: string, code: string) {
+export async function codeHash(env: { SESSION_SECRET?: string; APP_ENV?: string }, email: string, code: string) {
   const secret = env.SESSION_SECRET ?? ''
   if (isProduction(env) && isWeakSessionSecret(secret)) {
     throw new ApiError(503, 'server_misconfigured', 'SESSION_SECRET is missing, shorter than 32 characters, or still the example value')
