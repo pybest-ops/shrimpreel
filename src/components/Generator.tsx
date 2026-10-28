@@ -430,8 +430,12 @@ function SeatGrid({
                     </span>
                   )}
                 </span>
-                {/* 左上角序号：主角是 1，可选位置按顺序往后排 */}
-                <span className="absolute top-2 left-2 grid size-6 place-items-center rounded-full bg-ink text-xs font-semibold text-ink-fg">{index + 1}</span>
+                {/* 左上角序号：主角是 1，可选位置按顺序往后排。用标题字体、强调色，不加底色；有照片时垫一层浅底保证看得清 */}
+                <span
+                  className={`absolute top-1.5 left-2.5 font-display font-semibold leading-none text-accent-text ${index === 0 ? 'text-3xl' : 'text-xl'} ${item ? 'rounded-md bg-bg/85 px-1.5 py-1' : ''}`}
+                >
+                  {index + 1}
+                </span>
                 <span className={`relative rounded-md px-1.5 py-0.5 ${item ? 'bg-bg/85' : ''}`}>
                   <span className="block text-sm font-semibold">{label?.name ?? seat.id}</span>
                   <span className="block text-xs text-muted">{item ? g.change : index === 0 ? (label?.hint ?? g.addPhoto) : `${g.optional} · ${label?.hint ?? g.addPhoto}`}</span>
