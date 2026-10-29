@@ -21,9 +21,9 @@ https://github.com/user-attachments/assets/895aab94-d0c9-474e-8d90-61a6c551e536
 - 前端/SSR：TanStack Start（React 19）+ Tailwind 4，`/` 英文、`/zh` 中文
 - API：Hono（`/api/*`、`/media/*`、`/sitemap.xml`、`/robots.txt`、`/llms.txt`、IndexNow key 文件），入口 `src/server.ts`
 - 支付：Waffo Pancake（默认）、Dodo Payments，均为 MoR；也可用 Stripe（你自己是商户，销售税自己处理）；`mock` 仅用于本地和 e2e
-- 视频：fal.ai queue API（默认），可选 [yir.ai](https://yir.ai/?ref=qianshuixia) 网关或 [NanoAPI](https://nanoapi.ai)；`mock` 仅用于本地和 e2e。见下文“视频服务商”
+- 视频：fal.ai queue API（默认），可选 [yir.ai](https://yir.ai/?ref=qianshuixia) 网关、[NanoAPI](https://nanoapi.ai) 或 haomaotoken（Seedance 2.0）；`mock` 仅用于本地和 e2e。见下文“视频服务商”
 - 已具备：
-  - 用户与积分：Google 登录（含 One Tap）、积分包、月付和年付订阅、积分流水、个人中心（视频/账单/设置/兑换码/邀请链接/注销/导出我的数据）；账单显示实付与退款，订单和积分流水可分页加载，每笔订单有可打印的详情页（税务发票由支付商出具）
+  - 用户与积分：Google 登录（含 One Tap）和邮箱验证码登录、积分包、月付和年付订阅、积分流水、个人中心（视频/账单/设置/兑换码/邀请链接/注销/导出我的数据）；账单显示实付与退款，订单和积分流水可分页加载，每笔订单有可打印的详情页（税务发票由支付商出具）
   - 订单与生成：订单与部分/全额退款回收、生成任务队列（含死信队列）与失败退积分
   - 增长与运营：来源归因（UTM 与广告点击 ID，首次和最近触达）、访问 → 注册 → 下单 → 支付 → 生成漏斗、GA4 事件（带同意横幅）、成片公开分享页（用户自己开启，带链接预览图）
   - 管理后台：概览（含服务商成本与毛利）、用户、订单、生成、举报下架、留言、支付事件、邮件、审计、经营报表与订单 CSV、兑换码、邀请排行、运营设置与测试连接
@@ -90,6 +90,7 @@ npm run dev -- --host 127.0.0.1      # http://127.0.0.1:3000
    - `public/demo/*`：首页展示视频和海报。必须是自有或已获授权的素材，在 `site.styles[].examples.*.credit` 写明来源。
    - `public/og.png`、`public/favicon.svg`。
    - **多种舞蹈风格**（可选）：在 `site.styles` 里加项。每项有 `id`（写入 `generations.template_id`，发布后不要改）、`sources`（每个 `durations[].id` 一个文件）、`prompt`（`null` = 用 `video.yir.prompt` / `video.nanoapi.prompt`）、`scene`（yir 两步走的 `{ frame, prompt }`，`null` = 单步）和 `examples`（`original`、`aiVersions`、`madeWith`）。第一项是默认风格。同时在 `en.ts`、`zh.ts` 补 `styles['<id>'] = { name, tagline }`。只有一种风格时界面没有风格选择；多于一种时生成器出现选择（`/?style=<id>` 预选），首页 hero 出现风格标签，“Made with”每种风格一行。
+   - **多人位置**（可选，只有 `VIDEO_PROVIDER=haomao` 支持）：风格配 `seats: [{ id, target }, …]`，第一项是必填的主角，其余可选，每个位置一张照片，价格不变。`target` 用英文描述源视频里要被替换的那个人（外貌、服装、位置），prompt 按用户实际填了的位置拼成“Replace <target> in video 1 with the person in image N”，主角是 image 1，可选位置按顺序接在后面，没填的位置保留源视频里的人；此时风格的 `prompt` 不再使用。在 `en.ts`、`zh.ts` 的 `styles['<id>']` 里补 `seats: { <seat id>: { name, hint } }` 和可选的 `seatsNote`。主角照片仍存在 `generations.upload_id`，可选位置存在 `generation_seats`（迁移 0016）；照片清理、举报下架（同一条成片的所有照片一起下架、拉黑）和数据导出都覆盖可选位置。生成器显示一个主角大格加若干可选格；接口拒绝未知位置（`invalid_seat`）、同一张照片用在两个位置（`duplicate_photo`，按 sha256）和不支持多图的服务商（`seats_unsupported`）。源视频里最好不要有真实人物：先用 Seedance 把源视频里的人都换成虚构的人做一条“干净底片”，再拿它当源视频。
    - `node scripts/generate-placeholder-media.mjs`（需要 ffmpeg）按 `site.styles[].sources` 的文件名和品牌名重新生成原创占位素材。之后删掉 `seed/templates/` 里旧风格的文件。
 5. **改 `wrangler.jsonc` 的 `vars`**：`SITE_URL`、`APP_ENV=production`、`PAYMENT_PROVIDER`、`VIDEO_PROVIDER`、`MODERATION_PROVIDER`、`TURNSTILE_SITE_KEY`、`ADMIN_EMAILS`、`EMAIL_FROM`、`*_PRODUCTS`、`GOOGLE_CLIENT_ID`；创建资源后把 D1/KV id 写回（见下文）。
 6. **在支付商后台建商品**：每个积分包一个一次性商品、每个订阅套餐一个订阅商品，product id 写进 `WAFFO_PRODUCTS`、`DODO_PRODUCTS` 或 `STRIPE_PRODUCTS`（Stripe 填 Price ID `price_...`），例如 `{"starter":"prod_xxx","party":"prod_yyy","squad":"prod_zzz","monthly":"prod_aaa","yearly":"prod_bbb"}`。Waffo 卖订阅还要配 `WAFFO_STORE_ID`，客户门户要用；关掉订阅开关时 setup 脚本不建套餐商品。Waffo 可用 `node scripts/waffo-setup.mjs --store STO_xxx --apply` 批量创建，Dodo 可用 `node scripts/dodo-setup.mjs --apply --write-dev-vars`（加 `--webhook <url>` 同时建 webhook 并把签名密钥写进 `.dev.vars`；几个站共用一个 Dodo business 时加 `--brand <brand_id>`，商品建在这个站的品牌下，结账页显示这个站的名字和 Logo），Stripe 可用 `node scripts/stripe-setup.mjs --apply --write-dev-vars`（`--webhook` 用法相同）。页面价格只用于展示，实际收费以支付商后台为准，两边要一致。
@@ -136,7 +137,7 @@ npx wrangler r2 object put <name>-media/templates/<file>.mp4 --file seed/templat
 ```
 
 - `ratelimits[].namespace_id` 在同一账号内要唯一，多个站点不要共用同一组数字。
-- 密钥：`SESSION_SECRET`、`GOOGLE_CLIENT_SECRET`、`WAFFO_MERCHANT_ID`、`WAFFO_PRIVATE_KEY`、`DODO_API_KEY`、`DODO_WEBHOOK_SECRET`、`FAL_KEY`；用 Stripe 时是 `STRIPE_SECRET_KEY`、`STRIPE_WEBHOOK_SECRET`；按需加 `YIR_API_KEY`（`VIDEO_PROVIDER=yir`）、`NANOAPI_API_KEY`（`VIDEO_PROVIDER=nanoapi`）、`OPENAI_API_KEY`（图片审核）、`TURNSTILE_SECRET_KEY`。可以逐个 `npx wrangler secret put <NAME>`，也可以用 `scripts/sync-secrets.mjs` 一次同步：
+- 密钥：`SESSION_SECRET`、`GOOGLE_CLIENT_SECRET`、`WAFFO_MERCHANT_ID`、`WAFFO_PRIVATE_KEY`、`DODO_API_KEY`、`DODO_WEBHOOK_SECRET`、`FAL_KEY`；用 Stripe 时是 `STRIPE_SECRET_KEY`、`STRIPE_WEBHOOK_SECRET`；按需加 `YIR_API_KEY`（`VIDEO_PROVIDER=yir`）、`NANOAPI_API_KEY`（`VIDEO_PROVIDER=nanoapi`）、`HAOMAO_API_KEY`（`VIDEO_PROVIDER=haomao`）、`OPENAI_API_KEY`（图片审核）、`TURNSTILE_SECRET_KEY`。可以逐个 `npx wrangler secret put <NAME>`，也可以用 `scripts/sync-secrets.mjs` 一次同步：
   ```bash
   cp .dev.vars.example .dev.vars.production     # 填上线用的值；.dev.vars.* 已被 .gitignore 忽略
   node scripts/sync-secrets.mjs                 # 只出计划：新增、已存在、只在远端、同步后仍缺，不打印任何值
@@ -272,7 +273,7 @@ SMOKE_BASE_URL=https://video-template-staging.<子域名>.workers.dev SMOKE_EXPE
   - fal 按帧计费，16 帧算 1 个视频秒，480p 为 $0.04/视频秒（[价格](https://fal.ai/models/fal-ai/wan/v2.2-14b/animate/replace)）。模板源视频是 24fps，所以成片每秒 6 美分，18 秒约 $1.08。换模型、分辨率或源视频帧率时更新 `costCentsPerVideoSecond` 和 `sourceFps`。
   - 出片后才被判失败的任务（超时、管理员判失败）照样记成本；没出片的失败任务不记。mock 记 0。
   - 后台概览显示近 30 天的服务商成本、消耗积分折算的收入和估算毛利；生成列表逐条显示成本和毛利。每积分实收 = USD 已支付订单的净实收 ÷ 未回收的积分。实际扣费以服务商账单为准。
-- **视频服务商**：`VIDEO_PROVIDER` 可选 `fal`（默认）、`yir`、`nanoapi` 或 `mock`。[yir.ai](https://yir.ai/?ref=qianshuixia) 是图片视频 API 网关，启用方法：`VIDEO_PROVIDER=yir`，secret 写 `YIR_API_KEY`，模型和提示词在 `site.video.yir` 里改（`src/server/video/yir.ts`）。
+- **视频服务商**：`VIDEO_PROVIDER` 可选 `fal`（默认）、`yir`、`nanoapi`、`haomao` 或 `mock`。[yir.ai](https://yir.ai/?ref=qianshuixia) 是图片视频 API 网关，启用方法：`VIDEO_PROVIDER=yir`，secret 写 `YIR_API_KEY`，模型和提示词在 `site.video.yir` 里改（`src/server/video/yir.ts`）。
   - yir 没有模板所用的角色替换模型（`wan/v2.2-14b/animate/replace`）。接入用的是 Kling 2.6 Motion Control（reference 模式：照片 + 模板源视频），模板只交付接入代码，没有用真实 key 实测（提交、状态查询和错误映射由单元测试覆盖），效果和单价要自己验证，`costCentsPerSecond: 7` 只是估算，上线前按 [yir 模型页](https://yir.ai/models) 的报价改。
   - 两步走（可选，按风格配 `site.styles[].scene = { frame, prompt }`，默认 `null`；图片模型等共用参数在 `site.video.yir.sceneImage`）：Motion Control 的成片背景取自用户照片。想保留源视频的场景，就先用图片模型（如 `google/nano-banana-2`）把照片里的人合成进源视频首帧，再拿合成图做动作参考。首帧图放在 `seed/templates/`，和源视频一样上传到 R2 的 `templates/`（`--content-type image/jpeg`）。合成图会传进 yir Files API，第二步用固定的 `file_id` 引用，重新提交时请求体不变。每单多一张图的费用（`sceneImage.costCents`），用户照片也会经过图片模型的渠道。
   - 提交时用任务 id 作 `Idempotency-Key`：队列重投或 Worker 中断后重新提交，拿回的是同一个 yir 任务，不会重复计费。yir 按请求体识别同一请求，所以照片签名地址按任务创建时间生成，有效期 2 小时，重新提交时地址不变。
@@ -285,10 +286,16 @@ SMOKE_BASE_URL=https://video-template-staging.<子域名>.workers.dev SMOKE_EXPE
   - NanoAPI 会自己下载照片和源视频：用浏览器 User-Agent，读视频时发 Range 请求。源视频读不了时任务以 `internal_error` 失败（全额退款），不会报 `invalid_media`。实测里，不支持 Range 的服务器和不带扩展名的签名地址都出现过这种情况。模板的 `/media/*` 路由支持 Range，地址以 `.mp4` 结尾。不要在 `/media/*` 前面加人机验证，包括 Bot Fight Mode、Under Attack 模式和 WAF 质询。本地测试不要用 Pinggy 免费隧道，它会给浏览器返回一个提示页。
   - NanoAPI 创建任务没有幂等键，队列重投或 Worker 中断后重新提交会重复扣费。所以创建前先列出最近 3 小时的任务，照片地址和源视频地址都对得上就直接沿用那个任务（照片签名地址按任务创建时间生成，同一任务每次相同，不同任务一定不同）。列表请求失败时提交也失败（可重试的错误会重投），不会在查不了的情况下盲目创建。
   - 没配密钥、密钥失效、余额用完或账户被停用时，任务失败并退积分，同时立即触发“视频服务商账户”告警。NanoAPI 的 Key 没有月度额度，余额要自己在 NanoAPI 控制台盯着。结果每 30 秒轮询一次（文档要求间隔不少于 15 秒）。
+  - haomaotoken（`VIDEO_PROVIDER=haomao`，secret `HAOMAO_API_KEY`，配置在 `site.video.haomao`，代码在 `src/server/video/haomao.ts`）是火山引擎方舟的中转，用 Seedance 2.0（默认 `seedance-2.0-fast`）做参考生视频：照片是 image 1，模板源视频是 video 1，风格配了 `styles[].audio`（每个时长档位一段音频，和源视频一样放 `seed/templates/` 并上传到 R2 的 `templates/`）时再带上 audio 1 做配乐，prompt 末尾自动加一句用它做背景音乐。
+  - 方舟只读 haomaotoken 文件存储里的素材，所以每次提交都先把照片、源视频（和配乐）从 R2 读出来上传到 `/files/uploads`，不走签名地址。Seedance 单条最长 15 秒，`durations` 里超过 15 秒的档位会被接口拒绝（任务失败退积分），用 haomao 的站点要把最长档位改到 15 秒以内。
+  - 没有回调，每 30 秒轮询一次。任务失败时用同一请求体重提一次，第二次再失败才判失败退积分。创建任务没有幂等键，也不做去重：Worker 在建完任务、写库之前中断时，重投会再建一个任务（重复扣费），概率很低。
+  - 密钥失效（401）、余额不足（402）、账户受限（403）时任务失败并退积分，同时立即触发“视频服务商账户”告警。haomaotoken 没有余额查询接口，余额告警不覆盖它，后台“测试连接”只确认配了 Key。
+  - 未验证：模板只交付接入代码，调用方式照搬兄弟项目里跑通的 Seedance 调用（单元测试按它构造响应），没有在模板里用真实 key 跑过一单；`costCentsPerSecond: 10` 是估算，上线前按实际账单改。
 - **安全**：非 GET 的 `/api/*`（webhook、CSP 报告和前端错误上报除外）要求 `Origin` 与站点同源；上传按文件头校验真实类型；上传和生成按用户限流；封禁用户会立即使会话失效；管理操作写入 `admin_audit`。
   - 登录后的 `redirect`（登录页和 Google 回调）只接受站内路径：`src/lib/redirect.ts` 拒绝反斜杠、控制字符，以及规范化后以 `//` 开头的地址，所以 `/sign-in?redirect=/\evil.com` 这类链接会落到个人中心。
   - 5xx 错误只对管理员返回 `message`；其他人只拿到错误码，详情以 `[api] <method> <path> <code>: <message>` 写入 Workers Logs。
   - Google 登录：授权码流程带 PKCE（S256）和 nonce；One Tap 初始化前先从 `/api/auth/google/nonce` 取 nonce（同时写进 cookie），提交时两者必须一致。
+  - 邮箱验证码登录（没有 Google 账号的用户用）：登录页 Google 按钮下方填邮箱，`POST /api/auth/email/start` 发 6 位验证码（10 分钟有效），`POST /api/auth/email/verify` 校验后登录。库里只存以 `SESSION_SECRET` 为密钥的 HMAC（迁移 0017 `email_login_codes`）；同一邮箱 60 秒冷却、每小时最多 5 次，按 IP 限流，配了 Turnstile 时发码要过人机校验；输错 5 次作废，校验通过后按哈希删除，一个码只能用一次。不管邮箱有没有注册都返回同样的结果。验证码邮件直接发出、不进发件箱（不在库里留明文）；生产环境要配好发信才开（`/api/me` 的 `config.emailSignIn`），不需要新的环境变量。账号按邮箱合并：同一邮箱用 Google 或验证码登录是同一个账号。生成器主按钮先检查照片和授权勾选（缺哪个就在页面顶部弹提示），再弹出登录框，登录框和登录页共用同一个面板；用验证码登录不离开页面，点 Google 跳转前把已选照片缩到最长边 1280px 的 JPEG、存进 localStorage（1 小时有效），回来后恢复并立即删除，退出登录时也删除。本地开发时验证码随接口返回 `devCode` 并自动填上。
   - 账号以 Google 的 `sub` 为准：同一邮箱换了 Google 账号（`sub` 不同）会被拒绝登录，登录页提示联系客服（`account_conflict`）；dev 登录建的账号（没有 `sub`）在第一次 Google 登录时绑定。
   - 注销账号只保留邮箱的加盐哈希（`deleted_accounts` 表，盐是 `SESSION_SECRET`），同一邮箱重新注册时不发注册赠送、不绑定邀请人。更换 `SESSION_SECRET` 后旧记录对不上。
   - 上传请求必须带 `Content-Length`（否则 411），超过上限直接 413，不读请求体。服务商成片超过 100 MB 判失败并退积分；带长度时流式写入 R2，没带长度时边读边计数，超过 48 MB 即停止。

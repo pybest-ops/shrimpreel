@@ -18,6 +18,8 @@ export type BalanceQuery =
   | { status: 'forbidden'; keyName: string }
   | { status: 'http'; code: number }
   | { status: 'unreadable' }
+  // haomaotoken 没有余额查询接口：只确认配了 Key
+  | { status: 'unsupported'; provider: string }
   | ({ status: 'ok' } & VideoBalance)
 
 function readBalance(provider: string, amount: unknown, currency: unknown): BalanceQuery {
@@ -28,6 +30,10 @@ function readBalance(provider: string, amount: unknown, currency: unknown): Bala
 export async function queryVideoBalance(env: Env): Promise<BalanceQuery> {
   const id = activeVideoProviderId(env)
   if (id === 'mock') return { status: 'mock' }
+  if (id === 'haomao') {
+    if (!cleanSecret(env.HAOMAO_API_KEY)) return { status: 'no_key', keyName: 'HAOMAO_API_KEY' }
+    return { status: 'unsupported', provider: 'haomaotoken' }
+  }
   if (id === 'fal') {
     const key = cleanSecret(env.FAL_KEY)
     if (!key) return { status: 'no_key', keyName: 'FAL_KEY' }

@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
-import { defaultStyle, findDuration, findPackage, findPlan, findStyle, isLocale, localePath, sellingPlans, site } from '#/config/site'
+import { defaultStyle, findDuration, findPackage, findPlan, findStyle, isLocale, localePath, sellingPlans, site, type Style } from '#/config/site'
 import { safeRedirectPath } from '#/lib/redirect'
 import { exportFileName, exportUserData } from './account-export'
 import { adminRoutes } from './admin'
@@ -9,6 +9,18 @@ import { runHealthCheck } from './alerts'
 import { backupDatabase } from './backup'
 import { classifyTouch, deviceFromUserAgent, requestAttribution, sanitizeTouch } from './attribution'
 import { deletedEmailHash, endSession, loadSessionUser, publicUser, startSession, upsertUser } from './auth'
+import {
+  CODE_MAX_ATTEMPTS,
+  CODE_MAX_SENDS_PER_HOUR,
+  CODE_RESEND_COOLDOWN_SECONDS,
+  CODE_TTL_MINUTES,
+  codeHash,
+  emailSignInEnabled,
+  generateCode,
+  isValidEmail,
+  normalizeEmail,
+  sendLoginCode,
+} from './email-login'
 import { CLIENT_ERROR_PATH, summarizeClientError } from './client-error'
 import { clawbackStatements, expireStatements, ledgerStatements } from './credits'
 import { CSP_REPORT_PATH, summarizeCspReports } from './csp'
@@ -45,7 +57,7 @@ import { createTakedown, isBlockedMedia, parseTakedown, type TakedownInput } fro
 import { turnstileSiteKey, verifyTurnstile } from './turnstile'
 import type { AppContext, GenerationRow, OrderRow, UploadRow, UserRow } from './types'
 import { ApiError, constantTimeEqual, createId, isCheckConstraintError, isProduction, nowIso, randomToken, sha256Hex } from './util'
-import { activeVideoProviderId } from './video'
+import { SEAT_PROVIDERS, activeVideoProviderId } from './video'
 
 const MAX_ACTIVE_JOBS_PER_USER = 3
 
@@ -116,6 +128,8 @@ app.get('/api/me', async (c) => {
     config: {
       googleClientId: googleClientId(c.env) ?? null,
       devLogin: !isProduction(c.env),
+      // 邮箱验证码登录：生产环境配好发信才开
+      emailSignIn: emailSignInEnabled(c.env),
       paymentProvider: settings.paymentProvider || c.env.PAYMENT_PROVIDER,
       turnstileSiteKey: turnstileSiteKey(c.env),
       notice: publicNotice(settings),
@@ -232,6 +246,92 @@ app.post('/api/auth/dev-login', async (c) => {
   return c.json({ user: publicUser(user) })
 })
 
+// 邮箱验证码登录第一步：发码。不管邮箱有没有注册过都返回同样的结果，不暴露账号是否存在；
+// 按 IP 限流，同一邮箱 60 秒冷却、每小时最多 5 次；非生产环境把验证码随响应返回（devCode），方便本地和 e2e
+app.post('/api/auth/email/start', async (c) => {
+  const ip = c.req.header('cf-connecting-ip') ?? undefined
+  await rateLimit(c.env.AUTH_LIMITER, `email-code:${ip ?? 'local'}`)
+  if (!emailSignInEnabled(c.env)) throw new ApiError(503, 'email_signin_unavailable')
+  const body = await readJson<{ email: string; locale: string; turnstileToken: string }>(c)
+  const email = normalizeEmail(String(body.email ?? ''))
+  if (!isValidEmail(email)) throw new ApiError(400, 'invalid_email')
+  await verifyTurnstile(c.env, body.turnstileToken, ip)
+
+  const db = c.env.DB
+  const now = Date.now()
+  const row = await db
+    .prepare('SELECT created_at, window_started_at, sends_in_window FROM email_login_codes WHERE email = ?')
+    .bind(email)
+    .first<{ created_at: string; window_started_at: string; sends_in_window: number }>()
+  if (row && now - Date.parse(row.created_at) < CODE_RESEND_COOLDOWN_SECONDS * 1000) throw new ApiError(429, 'too_soon')
+  // 每小时窗口：窗口过了就重新计数
+  const sameWindow = row !== null && now - Date.parse(row.window_started_at) < 3600_000
+  if (sameWindow && row.sends_in_window >= CODE_MAX_SENDS_PER_HOUR) throw new ApiError(429, 'too_many_codes')
+
+  const code = generateCode()
+  const nowText = new Date(now).toISOString()
+  // 新码覆盖旧码、输错次数清零；先写库再发信，发信失败时用户点重发（会受 60 秒冷却限制）
+  await db
+    .prepare(
+      `INSERT INTO email_login_codes (email, code_hash, expires_at, attempts, window_started_at, sends_in_window, created_at)
+       VALUES (?1, ?2, ?3, 0, ?4, 1, ?4)
+       ON CONFLICT(email) DO UPDATE SET code_hash = ?2, expires_at = ?3, attempts = 0, created_at = ?4,
+         window_started_at = ?5, sends_in_window = ?6`,
+    )
+    .bind(
+      email,
+      await codeHash(c.env, email, code),
+      new Date(now + CODE_TTL_MINUTES * 60_000).toISOString(),
+      nowText,
+      sameWindow ? row.window_started_at : nowText,
+      sameWindow ? row.sends_in_window + 1 : 1,
+    )
+    .run()
+  await sendLoginCode(c.env, email, code, typeof body.locale === 'string' ? body.locale : null)
+  return c.json({ ok: true, cooldownSeconds: CODE_RESEND_COOLDOWN_SECONDS, ...(isProduction(c.env) ? {} : { devCode: code }) })
+})
+
+// 邮箱验证码登录第二步：校验并登录。过期、输错次数用完或不存在都按 invalid_code 处理；
+// 校验通过后按哈希删除这条记录，并发提交同一个码只有一个能登录。账号合并沿用 upsertUser（按邮箱找人，邮箱已由验证码证明）
+app.post('/api/auth/email/verify', async (c) => {
+  await rateLimit(c.env.AUTH_LIMITER, `email-verify:${c.req.header('cf-connecting-ip') ?? 'local'}`)
+  const body = await readJson<{ email: string; code: string; locale: string }>(c)
+  const email = normalizeEmail(String(body.email ?? ''))
+  const code = String(body.code ?? '').trim()
+  if (!isValidEmail(email) || !/^\d{6}$/.test(code)) throw new ApiError(400, 'invalid_code')
+
+  const db = c.env.DB
+  const row = await db
+    .prepare('SELECT code_hash, expires_at, attempts FROM email_login_codes WHERE email = ?')
+    .bind(email)
+    .first<{ code_hash: string; expires_at: string; attempts: number }>()
+  if (!row) throw new ApiError(400, 'invalid_code')
+  if (Date.now() >= Date.parse(row.expires_at) || row.attempts >= CODE_MAX_ATTEMPTS) {
+    await db.prepare('DELETE FROM email_login_codes WHERE email = ?').bind(email).run()
+    throw new ApiError(400, 'invalid_code')
+  }
+  const hash = await codeHash(c.env, email, code)
+  if (!constantTimeEqual(hash, row.code_hash)) {
+    await db.prepare('UPDATE email_login_codes SET attempts = attempts + 1 WHERE email = ?').bind(email).run()
+    throw new ApiError(400, 'invalid_code')
+  }
+  const consumed = await db.prepare('DELETE FROM email_login_codes WHERE email = ? AND code_hash = ?').bind(email, hash).run()
+  if (!consumed.meta.changes) throw new ApiError(400, 'invalid_code')
+
+  const user = await upsertUser(c.env, {
+    email,
+    name: null,
+    picture: null,
+    googleSub: null,
+    country: c.req.header('cf-ipcountry') ?? null,
+    locale: typeof body.locale === 'string' && isLocale(body.locale) ? body.locale : null,
+    attribution: requestAttribution(c, 'first'),
+    referral: await requestReferral(c),
+  })
+  await startSession(c, user.id)
+  return c.json({ user: publicUser(user) })
+})
+
 app.post('/api/auth/logout', async (c) => {
   await endSession(c)
   return c.json({ ok: true })
@@ -286,7 +386,7 @@ app.post('/api/generations', async (c) => {
   const settings = await getSettings(c.env)
   assertOpen(settings, user)
   await rateLimit(c.env.GENERATE_LIMITER, user.id)
-  const body = await readJson<{ uploadId: string; durationId: string; styleId?: string; mockOutcome: string; locale: string }>(c)
+  const body = await readJson<{ uploadId: string; seats?: Record<string, unknown>; durationId: string; styleId?: string; mockOutcome: string; locale: string }>(c)
   const duration = findDuration(body.durationId ?? '')
   if (!duration) throw new ApiError(400, 'invalid_duration')
   // 不带 styleId 用默认风格；带了但不存在报错，不悄悄换风格
@@ -298,6 +398,7 @@ app.post('/api/generations', async (c) => {
     .bind(body.uploadId ?? '', user.id)
     .first<UploadRow>()
   if (!upload) throw new ApiError(400, 'invalid_upload')
+  const seatUploads = await resolveSeatUploads(db, c.env, user.id, style, upload, body.seats)
   const active = await db
     .prepare(`SELECT COUNT(*) AS n FROM generations WHERE user_id = ? AND status IN ('queued', 'processing')`)
     .bind(user.id)
@@ -321,6 +422,9 @@ app.post('/api/generations', async (c) => {
            VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
         )
         .bind(id, user.id, style.id, duration.id, duration.seconds, duration.credits, upload.id, providerId, meta, now, now),
+      ...seatUploads.map((seat) =>
+        db.prepare('INSERT INTO generation_seats (generation_id, seat_id, upload_id) VALUES (?, ?, ?)').bind(id, seat.seatId, seat.uploadId),
+      ),
       ...ledgerStatements(db, {
         userId: user.id,
         delta: -duration.credits,
@@ -874,6 +978,7 @@ app.delete('/api/account', async (c) => {
     db.prepare('DELETE FROM generations WHERE user_id = ?').bind(user.id),
     db.prepare('DELETE FROM uploads WHERE user_id = ?').bind(user.id),
     db.prepare('DELETE FROM email_outbox WHERE user_id = ?').bind(user.id),
+    db.prepare('DELETE FROM email_login_codes WHERE email = ?').bind(user.email),
     ...clawbackStatements(db, {
       userId: user.id,
       maxAmount: 1_000_000_000, // 全部剩余积分
@@ -1056,4 +1161,23 @@ function isLocalDevRequest(c: { env: Env; req: { url: string; header(name: strin
   if (c.req.header('x-forwarded-for') || c.req.header('forwarded')) return false
   const edgeIp = c.req.header('cf-connecting-ip')
   return !edgeIp || ['127.0.0.1', '::1'].includes(edgeIp)
+}
+
+// 多人风格的可选位置：body.seats = { seatId: uploadId }。只接受这个风格里主角以外的位置；
+// 照片要属于本人、没过期，和主角照片、彼此之间都不能是同一张（按 id 和 sha256 判断）；服务商要支持多张参考图
+async function resolveSeatUploads(db: D1Database, env: Env, userId: string, style: Style, lead: UploadRow, raw: unknown) {
+  const entries = Object.entries(raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}).filter(([, id]) => id)
+  if (!entries.length) return []
+  if (!SEAT_PROVIDERS.includes(activeVideoProviderId(env))) throw new ApiError(400, 'seats_unsupported')
+  const optional = new Set((style.seats ?? []).slice(1).map((seat) => seat.id))
+  if (entries.some(([seatId, uploadId]) => !optional.has(seatId) || typeof uploadId !== 'string')) throw new ApiError(400, 'invalid_seat')
+  const ids = entries.map(([, uploadId]) => uploadId as string)
+  const found = await db
+    .prepare(`SELECT id, sha256 FROM uploads WHERE user_id = ? AND expired_at IS NULL AND id IN (${ids.map(() => '?').join(', ')})`)
+    .bind(userId, ...ids)
+    .all<{ id: string; sha256: string | null }>()
+  if (found.results.length !== new Set(ids).size) throw new ApiError(400, 'invalid_seat')
+  const hashes = [lead.sha256, ...found.results.map((row) => row.sha256)].filter((hash): hash is string => Boolean(hash))
+  if (new Set([lead.id, ...ids]).size !== ids.length + 1 || new Set(hashes).size !== hashes.length) throw new ApiError(400, 'duplicate_photo')
+  return entries.map(([seatId, uploadId]) => ({ seatId, uploadId: uploadId as string }))
 }

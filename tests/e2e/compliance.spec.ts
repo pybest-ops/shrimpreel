@@ -1,10 +1,10 @@
 import { randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { expect, test, type APIRequestContext } from '@playwright/test'
-import { ORIGIN, PHOTO, buyPackage, credits, devLogin, durationCredits, json, pkg, post, uniqueEmail, uploadPhoto } from './helpers'
+import { ORIGIN, PHOTO, SHORTEST, buyPackage, credits, devLogin, json, pkg, post, uniqueEmail, uploadPhoto } from './helpers'
 
 const STARTER = pkg('starter').credits
-const SHORT = durationCredits('short')
+const SHORT = SHORTEST.credits
 
 const ADMIN_EMAIL = 'admin@example.com'
 
@@ -23,7 +23,7 @@ async function upload(request: APIRequestContext, buffer?: Buffer<ArrayBuffer>) 
 }
 
 async function generate(request: APIRequestContext, uploadId: string) {
-  return (await json<{ generation: Generation }>(post(request, '/api/generations', { uploadId, durationId: 'short' }), 201)).generation.id
+  return (await json<{ generation: Generation }>(post(request, '/api/generations', { uploadId, durationId: SHORTEST.id }), 201)).generation.id
 }
 
 async function generation(request: APIRequestContext, id: string) {
@@ -49,7 +49,7 @@ test('数据保留：进行中任务的原图不清理；到期后原图不能�
 
   // +8 天：原图过期（7 天），成片仍在（30 天）
   expect(await json<Swept>(post(request, '/api/dev/sweep', { days: 8 }))).toEqual({ uploads: 1, outputs: 0 })
-  const reuse = await json<{ error: string }>(post(request, '/api/generations', { uploadId, durationId: 'short' }), 400)
+  const reuse = await json<{ error: string }>(post(request, '/api/generations', { uploadId, durationId: SHORTEST.id }), 400)
   expect(reuse.error).toBe('invalid_upload')
   expect(await credits(request)).toBe(STARTER - SHORT)
   expect((await request.get(`/api/generations/${genId}/video`)).status()).toBe(200)

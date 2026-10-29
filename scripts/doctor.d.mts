@@ -17,6 +17,8 @@ export function runDoctor(
     siteDomain?: string
     packageIds?: string[]
     planIds?: string[]
+    // 配了多人位置的风格 id，默认取 site.ts 的 seatStyleIds
+    seatStyles?: readonly string[]
     siteTodos?: SiteTodo[]
   },
 ): ConfigIssue[]

@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { api, errorCode, type ClientConfig, type PublicUser } from './api'
 import { site } from '#/config/site'
 import { captureAttribution, track } from './attribution'
+import { clearDraft } from './generator-draft'
 
 type SessionState = {
   user: PublicUser | null
@@ -33,6 +34,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     await api('/api/auth/logout', { method: 'POST', json: {} })
+    // 退出登录时清掉生成器暂存的照片（generator-draft.ts）
+    clearDraft()
     setUser(null)
   }, [])
 
@@ -50,7 +53,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     } catch {
       return
     }
-    track('sign_up', { method: config?.googleClientId ? 'google' : 'dev' })
+    // 邮箱验证码登录会在 sessionStorage 里记下方式；其余按配置判断 Google 或本地开发登录
+    let method: string | null = null
+    try {
+      method = sessionStorage.getItem('sign_in_method')
+      sessionStorage.removeItem('sign_in_method')
+    } catch {
+      method = null
+    }
+    track('sign_up', { method: method ?? (config?.googleClientId ? 'google' : 'dev') })
   }, [user, config])
 
   const value = useMemo(() => ({ user, config, loading, refresh, signOut }), [user, config, loading, refresh, signOut])
@@ -68,9 +79,9 @@ export function useSession() {
   return value
 }
 
-// Google 登录入口：配置了 Google 直接跳 OAuth，否则去登录页（本地 dev 登录）
+// 登录入口：开了邮箱登录时去登录页（Google 和邮箱都能选）；只有 Google 时直接跳 OAuth；都没有时去登录页（本地 dev 登录）
 export function signInHref(config: ClientConfig | null, redirect: string, signInPath: string) {
-  if (config?.googleClientId) return `/api/auth/google/start?redirect=${encodeURIComponent(redirect)}`
+  if (config?.googleClientId && !config.emailSignIn) return `/api/auth/google/start?redirect=${encodeURIComponent(redirect)}`
   return `${signInPath}?redirect=${encodeURIComponent(redirect)}`
 }
 

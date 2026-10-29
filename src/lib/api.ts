@@ -59,6 +59,8 @@ export type PublicUser = {
 export type ClientConfig = {
   googleClientId: string | null
   devLogin: boolean
+  // 邮箱验证码登录可用（生产环境要配好发信）
+  emailSignIn: boolean
   paymentProvider: string
   turnstileSiteKey: string | null
   // 后台运营参数里的维护模式和全站公告（按语言，空字符串表示不显示）

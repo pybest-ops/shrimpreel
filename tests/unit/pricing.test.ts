@@ -36,9 +36,10 @@ describe('packageMakes', () => {
 
   it('够最长时长时列最长和最短两项', () => {
     const credits = longest.credits * 2
+    // 站点只有一种时长时最长和最短是同一项，只列一次
     expect(packageMakes(credits)).toEqual([
       { videos: 2, seconds: longest.seconds },
-      { videos: Math.floor(credits / shortest.credits), seconds: shortest.seconds },
+      ...(longest.id === shortest.id ? [] : [{ videos: Math.floor(credits / shortest.credits), seconds: shortest.seconds }]),
     ])
   })
 })

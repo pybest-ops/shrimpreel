@@ -8,6 +8,8 @@ export interface TemplateParams {
   generation_succeeded: { generationId: string; expiresAt: string | null }
   generation_failed: { generationId: string; credits: number }
   order_paid: { orderId: string; credits: number; amount: string }
+  // 邮箱登录验证码：直接发送，不进发件箱（见 email-login.ts）
+  login_code: { code: string; minutes: number }
   takedown_received: { reportId: string; dueAt: string }
   takedown_resolved: { reportId: string; outcome: 'removed' | 'rejected' }
   content_removed: { reportId: string; videos: number }
@@ -33,6 +35,8 @@ type Block = {
   heading: string
   paragraphs: string[]
   cta?: { label: string; url: string }
+  // 大号等宽显示的验证码（登录验证码邮件用）
+  code?: string
   footer?: string
   replyTo?: string // 默认 site.supportEmail
 }
@@ -89,7 +93,7 @@ const ALERTS_ZH: Record<AlertKind, (p: AlertParams) => { title: string; summary:
   provider_account: (p) => ({
     title: `视频服务商账户异常：${p.count} 个任务失败`,
     summary: `最近 ${span(p.windowMinutes)}有 ${p.count} 个生成任务因服务商账户问题失败（${p.detail ?? ''}），已自动退积分。不处理的话之后的任务都会失败。`,
-    hint: '按错误码处理：provider_not_configured 是没配密钥；YIR_UNAUTHORIZED 是密钥失效；YIR_INSUFFICIENT_BALANCE 到 yir 后台充值；YIR_SPEND_LIMIT_EXCEEDED 调高 API Key 的月度额度；nanoapi_invalid_api_key 是 NanoAPI 密钥失效；nanoapi_insufficient_balance 到 NanoAPI 后台充值；nanoapi_account_suspended 是账户被停用，联系 NanoAPI 支持。',
+    hint: '按错误码处理：provider_not_configured 是没配密钥；YIR_UNAUTHORIZED 是密钥失效；YIR_INSUFFICIENT_BALANCE 到 yir 后台充值；YIR_SPEND_LIMIT_EXCEEDED 调高 API Key 的月度额度；nanoapi_invalid_api_key 是 NanoAPI 密钥失效；nanoapi_insufficient_balance 到 NanoAPI 后台充值；nanoapi_account_suspended 是账户被停用，联系 NanoAPI 支持；haomao_unauthorized 是 haomaotoken 密钥失效；haomao_insufficient_balance 到 haomaotoken 后台充值；haomao_forbidden 是账户或模型权限受限。',
     path: '/admin/generations',
   }),
   provider_balance: (p) => ({
@@ -137,6 +141,23 @@ export function alertChatText(p: AlertParams) {
 }
 
 const USER_TEMPLATES: { [K in UserTemplate]: Record<Locale, Render<K>> } = {
+  login_code: {
+    en: (p) => ({
+      subject: `${p.code} is your ${brand} sign-in code`,
+      heading: 'Your sign-in code',
+      code: p.code,
+      paragraphs: [
+        `Enter this code on the sign-in page to continue. It expires in ${p.minutes} minutes and can only be used once.`,
+        'If you didn’t ask for it, you can ignore this email. Never share this code with anyone.',
+      ],
+    }),
+    zh: (p) => ({
+      subject: `${p.code} 是你的 ${brand} 登录验证码`,
+      heading: '你的登录验证码',
+      code: p.code,
+      paragraphs: [`在登录页输入这个验证码即可登录，${p.minutes} 分钟内有效，只能使用一次。`, '如果不是你本人操作，忽略这封邮件即可。不要把验证码告诉任何人。'],
+    }),
+  },
   generation_succeeded: {
     en: (p, ctx) => ({
       subject: `Your ${brand} video is ready`,
@@ -311,6 +332,7 @@ export function renderEmail<K extends EmailTemplate>(template: K, params: Templa
   const text = [
     block.heading,
     '',
+    ...(block.code ? [block.code, ''] : []),
     ...paragraphs.flatMap((p) => [p, '']),
     ...(block.cta ? [`${block.cta.label}: ${block.cta.url}`, ''] : []),
     ...(block.footer ? [block.footer, ''] : []),
@@ -336,6 +358,7 @@ function layout(block: Block, paragraphs: string[]) {
 <div style="font-size:17px;font-weight:700;color:#18181b;margin-bottom:20px">${escapeHtml(brand)}</div>
 <div style="background:#ffffff;border-radius:12px;padding:28px 26px">
 <h1 style="margin:0 0 16px;font-size:21px;line-height:28px;color:#18181b">${escapeHtml(block.heading)}</h1>
+${block.code ? `<p style="margin:0 0 18px;font-family:'SFMono-Regular',Menlo,Consolas,monospace;font-size:32px;font-weight:700;letter-spacing:8px;color:#18181b">${escapeHtml(block.code)}</p>` : ''}
 ${paragraphs.map(p).join('\n')}${cta}
 </div>
 <div style="padding:18px 6px 0;font-size:12px;line-height:18px;color:#71717a">${footer}<p style="margin:0">${escapeHtml(brand)} · <a href="mailto:${escapeHtml(site.supportEmail)}" style="color:#71717a">${escapeHtml(site.supportEmail)}</a></p></div>

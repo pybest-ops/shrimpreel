@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { expect, test, type APIRequestContext } from '@playwright/test'
 import { formatPrice } from '#/config/site'
-import { ORIGIN, PHOTO, buyPackage, devLogin, durationCredits, json, pkg, post, uniqueEmail, uploadPhoto } from './helpers'
+import { ORIGIN, PHOTO, SHORTEST, buyPackage, devLogin, json, pkg, post, uniqueEmail, uploadPhoto } from './helpers'
 
 // 本地 send_email binding 只模拟发送，不会真的发出；断言以发件箱（/api/dev/emails）为准
 const ADMIN_EMAIL = 'admin@example.com'
@@ -30,7 +30,7 @@ async function generation(request: APIRequestContext, id: string) {
 
 async function generate(request: APIRequestContext, body: Record<string, unknown>) {
   const { upload } = await json<{ upload: { id: string } }>(uploadPhoto(request), 201)
-  return (await json<{ generation: { id: string } }>(post(request, '/api/generations', { uploadId: upload.id, durationId: 'short', ...body }), 201))
+  return (await json<{ generation: { id: string } }>(post(request, '/api/generations', { uploadId: upload.id, durationId: SHORTEST.id, ...body }), 201))
     .generation.id
 }
 
@@ -89,7 +89,7 @@ test('生成邮件：成功、失败退积分各一封，跟随用户最近使�
   expect(byTemplate.order_paid).toMatchObject({ locale: 'en', status: 'sent' })
   expect(byTemplate.generation_succeeded).toMatchObject({ locale: 'zh', status: 'sent', user_id: user.id })
   expect(byTemplate.generation_succeeded.params.expiresAt).toEqual(expect.any(String))
-  expect(byTemplate.generation_failed).toMatchObject({ locale: 'zh', status: 'sent', params: { generationId: bad, credits: durationCredits('short') } })
+  expect(byTemplate.generation_failed).toMatchObject({ locale: 'zh', status: 'sent', params: { generationId: bad, credits: SHORTEST.credits } })
   expect(byTemplate.generation_failed.subject).toContain('积分已退回')
 })
 
@@ -104,7 +104,7 @@ test('举报邮件：未登录举报不发回执，只提醒管理员；临近�
     uploadPhoto(page.request, Buffer.concat([readFileSync(PHOTO), randomBytes(16)]) as Buffer<ArrayBuffer>),
     201,
   )
-  const genId = (await json<{ generation: { id: string } }>(post(page.request, '/api/generations', { uploadId: upload.id, durationId: 'short' }), 201))
+  const genId = (await json<{ generation: { id: string } }>(post(page.request, '/api/generations', { uploadId: upload.id, durationId: SHORTEST.id }), 201))
     .generation.id
   await expect.poll(async () => (await generation(page.request, genId)).status, { timeout: 60_000, intervals: [1000] }).toBe('succeeded')
 

@@ -1,13 +1,13 @@
 import { expect, test } from '@playwright/test'
-import { ORIGIN, buyPackage, content, credits, devLogin, durationCredits, json, ledger, pkg, post, uniqueEmail, uploadPhoto } from './helpers'
+import { LONGEST, ORIGIN, SHORTEST, buyPackage, content, credits, devLogin, json, ledger, pkg, post, uniqueEmail, uploadPhoto } from './helpers'
 
 type Generation = { id: string; status: string }
 type Grant = { source: string; amount: number; remaining: number; expires_at: string | null }
 
 const ADMIN_EMAIL = 'admin@example.com'
 const STARTER = pkg('starter').credits
-const SHORT = durationCredits('short')
-const FULL = durationCredits('full')
+const SHORT = SHORTEST.credits
+const FULL = LONGEST.credits
 // 限时补发积分：比 short 少 1，这样一次 short 生成先扣光它、再从购买的积分里扣 1
 const BONUS = SHORT - 1
 
@@ -43,7 +43,7 @@ test('积分批次：先扣快到期的补发积分，失败原路退回，到�
     // 生成 short 档：先扣到期的补发积分，再扣购买的 1；失败后原路退回
     const { upload } = await json<{ upload: { id: string } }>(uploadPhoto(user), 201)
     const { generation } = await json<{ generation: Generation }>(
-      post(user, '/api/generations', { uploadId: upload.id, durationId: 'short', mockOutcome: 'fail' }),
+      post(user, '/api/generations', { uploadId: upload.id, durationId: SHORTEST.id, mockOutcome: 'fail' }),
       201,
     )
     expect(await credits(user)).toBe(STARTER + BONUS - SHORT)
@@ -101,7 +101,7 @@ test('并发扣费：余额只够一次时同时发起两个生成，一个成�
   expect(await credits(request)).toBe(balance)
 
   const { upload } = await json<{ upload: { id: string } }>(uploadPhoto(request), 201)
-  const body = { uploadId: upload.id, durationId: 'full', mockOutcome: 'hang' }
+  const body = { uploadId: upload.id, durationId: LONGEST.id, mockOutcome: 'hang' }
   const results = await Promise.all([post(request, '/api/generations', body), post(request, '/api/generations', body)])
   expect(results.map((r) => r.status()).sort()).toEqual([201, 402])
   expect(await credits(request)).toBe(balance - FULL)

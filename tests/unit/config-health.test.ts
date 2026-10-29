@@ -59,6 +59,10 @@ describe('checkConfig', () => {
     expect(keys(ready({ vars: { VIDEO_PROVIDER: 'yir' } }))).toEqual(['error:YIR_API_KEY'])
     expect(keys(ready({ vars: { VIDEO_PROVIDER: 'yir' }, secrets: { YIR_API_KEY: 'y' } }))).toEqual([])
     expect(keys(ready({ vars: { VIDEO_PROVIDER: 'nanoapi' } }))).toEqual(['error:NANOAPI_API_KEY'])
+    expect(keys(ready({ vars: { VIDEO_PROVIDER: 'haomao' } }))).toEqual(['error:HAOMAO_API_KEY'])
+    // 多人风格只有 haomao 支持
+    expect(keys({ ...ready(), seatStyleIds: ['band-v1'] })).toEqual(['error:VIDEO_PROVIDER'])
+    expect(keys({ ...ready({ vars: { VIDEO_PROVIDER: 'haomao' }, secrets: { HAOMAO_API_KEY: 'h' } }), seatStyleIds: ['band-v1'] })).toEqual([])
     expect(keys(ready({ secrets: { SESSION_SECRET: 'change-me-to-a-long-random-string' } }))).toEqual(['error:SESSION_SECRET'])
     expect(keys(ready({ secrets: { SESSION_SECRET: ' ' } }))).toEqual(['error:SESSION_SECRET'])
     expect(keys(ready({ secrets: { SESSION_SECRET: true } }))).toEqual([])
@@ -160,6 +164,8 @@ describe('doctor', () => {
       'SESSION_SECRET',
     ])
     expect(parseSecretNames('✘ [ERROR] Worker not found [code: 10007]')).toBeNull()
+    // 设了代理时 stderr 有 “▲ [WARNING] …”，拼在 JSON 后面
+    expect(parseSecretNames('[\n  {\n    "name": "FAL_KEY",\n    "type": "secret_text"\n  }\n]\n\n▲ [WARNING] Proxy environment variables detected.\n')).toEqual(['FAL_KEY'])
   })
 
   // 把模板配置改成一份可上线的配置，再逐项破坏
@@ -174,7 +180,7 @@ describe('doctor', () => {
   })
   const allSecrets = Object.keys(ready().secrets)
   const doctorKeys = (config: Record<string, any>, options: Parameters<typeof runDoctor>[1] = {}) =>
-    runDoctor(config, { secretNames: allSecrets, pendingMigrations: [], siteDomain: 'moonhop.ai', ...options }).map((i) => `${i.level}:${i.key}`)
+    runDoctor(config, { secretNames: allSecrets, pendingMigrations: [], siteDomain: 'moonhop.ai', seatStyles: [], ...options }).map((i) => `${i.level}:${i.key}`)
 
   it('可上线的配置通过；缺 secret、未应用 migration、查询失败都报错', () => {
     expect(doctorKeys(deployable())).toEqual([])

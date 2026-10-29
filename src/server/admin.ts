@@ -419,7 +419,10 @@ adminRoutes.get('/generations', async (c) => {
   const [rows, perCreditRow] = await db.batch([
     db
       .prepare(
-        `SELECT g.*, u.email AS user_email FROM generations g JOIN users u ON u.id = g.user_id
+        // seat_count：多人风格里主角以外填了照片的位置数（generation_seats）
+        `SELECT g.*, u.email AS user_email,
+           (SELECT COUNT(*) FROM generation_seats s WHERE s.generation_id = g.id) AS seat_count
+         FROM generations g JOIN users u ON u.id = g.user_id
          ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY g.created_at DESC LIMIT ? OFFSET ?`,
       )
       .bind(...params, limit, offset),

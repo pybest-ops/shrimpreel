@@ -59,7 +59,7 @@ export async function storeOutputFromUrl(
   await env.MEDIA.put(key, bytes, { httpMetadata })
   return true
 }
-const POLL_DELAY_SECONDS: Record<string, number> = { mock: 2, fal: 20, yir: 20, nanoapi: 30 }
+const POLL_DELAY_SECONDS: Record<string, number> = { mock: 2, fal: 20, yir: 20, nanoapi: 30, haomao: 30 }
 
 export async function enqueueJob(env: Env, message: VideoJobMessage, delaySeconds = 0) {
   await env.VIDEO_QUEUE.send(message, delaySeconds > 0 ? { delaySeconds } : undefined)
@@ -126,6 +126,17 @@ async function submitGeneration(env: Env, generation: GenerationRow) {
 
   const provider = getVideoProvider(env, generation.provider)
   const baseMeta = parseMeta(generation.provider_meta)
+  // 多人风格：可选位置的照片按风格里的位置顺序排列；照片已过期（清理或下架）的位置跳过，由源视频里的人照旧出演
+  const seatRows = style.seats?.length
+    ? (
+        await env.DB.prepare(
+          'SELECT s.seat_id, u.r2_key FROM generation_seats s JOIN uploads u ON u.id = s.upload_id WHERE s.generation_id = ? AND u.expired_at IS NULL',
+        )
+          .bind(generation.id)
+          .all<{ seat_id: string; r2_key: string }>()
+      ).results
+    : []
+  const seatImages = (style.seats ?? []).flatMap((seat) => seatRows.filter((row) => row.seat_id === seat.id).map((row) => ({ seatId: seat.id, key: row.r2_key })))
 
   // 签名在 try 里：生产环境 SESSION_SECRET 配错时会抛错，要和提交失败一样放回 queued，交给队列重试和死信退款
   try {
@@ -138,8 +149,11 @@ async function submitGeneration(env: Env, generation: GenerationRow) {
       style,
       durationSeconds: generation.duration_seconds,
       imageUrl: await signedUploadUrl(env, upload.id, Date.parse(generation.created_at)),
+      imageKey: upload.r2_key,
       sourceVideoUrl: templateSourceUrl(env, sourceFile),
       sourceVideoKey: `templates/${sourceFile}`,
+      seatImages,
+      audioKey: style.audio?.[duration.id] ? `templates/${style.audio[duration.id]}` : undefined,
       webhookUrl: webhookUrl.toString(),
       meta: baseMeta,
     })
@@ -303,6 +317,8 @@ export async function runScheduledMaintenance(env: Env) {
   const now = nowIso()
   await db.batch([
     db.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(now),
+    // 过期超过一天的登录验证码（留一天是为了让每小时发送上限的计数不被提前清掉）
+    db.prepare('DELETE FROM email_login_codes WHERE expires_at < ?').bind(new Date(Date.now() - 24 * 3600_000).toISOString()),
     db
       .prepare(`UPDATE orders SET status = 'canceled', updated_at = ? WHERE status = 'pending' AND created_at < ?`)
       .bind(now, new Date(Date.now() - 24 * 3600_000).toISOString()),

@@ -4,7 +4,8 @@ import type { Content } from './en'
 
 type S = typeof Site
 type StyleId = S['styles'][number]['id']
-type StyleCopy = { name: string; tagline: string }
+// 与 en.ts 的 StyleCopy 一致：seats 是多人风格每个位置的名称和提示，seatsNote 是位置格子下方的说明
+type StyleCopy = { name: string; tagline: string; seats?: Record<string, { name: string; hint: string }>; seatsNote?: string }
 
 export function zh(s: S): Content {
   const k = s.keyword
@@ -81,6 +82,10 @@ export function zh(s: S): Content {
       full: '完整版',
       creditsLabel: (n: number) => `${n} 积分`,
       consent: '照片中是我本人，或我已获得照片中人物的许可；对方已满 18 岁，且不是明星或公众人物。',
+      consentSeats: '每张照片都是我本人，或已获得照片中人物的许可；所有人都已满 18 岁，且不是明星或公众人物。',
+      optional: '可选',
+      addPhoto: '添加照片',
+      removePhoto: '移除照片',
       ctaSignUp: '免费注册，立即开始',
       ctaGenerate: (n: number) => `生成视频 · ${n} 积分`,
       ctaBuy: '购买积分后生成',
@@ -89,7 +94,10 @@ export function zh(s: S): Content {
       balance: (n: number) => `余额：${n} 积分`,
       needMore: (n: number) => `该时长还差 ${n} 积分。`,
       needPhoto: '请先上传照片。',
-      needConsent: '请勾选授权确认。',
+      needConsent: '请先勾选授权确认。',
+      signInTitle: '登录后开始生成',
+      signInBody: '登录过程中，已选的照片会保留。',
+      close: '关闭',
       queued: '排队中…',
       processing: '正在生成，通常需要几分钟；你可以先离开本页。',
       succeeded: '视频已生成',
@@ -268,8 +276,17 @@ export function zh(s: S): Content {
     },
     signIn: {
       title: `登录 ${b}`,
-      body: '使用 Google 账号登录，首次登录会自动创建账号。',
+      body: '使用 Google 账号或邮箱登录，首次登录会自动创建账号。',
       google: '使用 Google 继续',
+      or: '或',
+      emailLabel: '邮箱',
+      sendCode: '发送登录验证码',
+      codeSent: (email: string) => `6 位验证码已发送到 ${email}，10 分钟内有效。`,
+      codeLabel: '验证码',
+      verify: '登录',
+      resend: '重新发送',
+      resendIn: (seconds: number) => `${seconds} 秒后可重新发送`,
+      useOther: '换一个邮箱',
       devTitle: '开发者登录（仅本地）',
       devEmail: '邮箱',
       devSubmit: '以该邮箱登录',
@@ -451,6 +468,8 @@ export function zh(s: S): Content {
     },
     common: {
       loading: '加载中…',
+      unmute: '播放声音',
+      mute: '静音',
       retry: '重试',
       home: '返回首页',
       notFoundTitle: '页面不存在',
@@ -488,10 +507,17 @@ export function zh(s: S): Content {
       unsupported_file_type: '请上传 JPG、PNG 或 WebP 图片。',
       invalid_upload: '请重新上传照片。',
       invalid_style: '这个舞蹈风格暂不可用，请换一个。',
+      invalid_seat: '有一张附加照片无法使用，请重新添加。',
+      duplicate_photo: '每个人需要一张自己的照片，不同位置请用不同的照片。',
+      seats_unsupported: '暂时不支持添加更多人，请移除附加照片后再试。',
       queue_unavailable: '生成队列繁忙，积分已退回，请重试。',
       payment_not_configured: '支付暂不可用。',
       payment_provider_error: '支付商未响应，请重试。',
       invalid_email: '请输入有效的邮箱地址。',
+      too_soon: '验证码刚刚发送过，请稍等一分钟再试。',
+      too_many_codes: '这个邮箱收到的验证码太多了，请一小时后再试。',
+      email_signin_unavailable: '邮箱登录暂时不可用，请使用 Google 登录。',
+      email_send_failed: '邮件发送失败，请稍后再试。',
       invalid_message: '留言长度需在 10 到 5000 字之间。',
       generation_in_progress: '该视频仍在生成中。',
       google_not_configured: '尚未配置 Google 登录。',
@@ -525,7 +551,7 @@ export function zh(s: S): Content {
       privacy: {
         title: '隐私政策',
         sections: [
-          { h: '我们收集哪些信息', p: [`登录时，我们从 Google 获取你的姓名、邮箱和头像。制作视频时，我们保存你上传的照片和生成的视频。支付信息由支付合作方处理，${b} 不会接触你的卡号。`] },
+          { h: '我们收集哪些信息', p: [`使用 Google 登录时，我们从 Google 获取你的姓名、邮箱和头像；使用邮箱验证码登录时，我们只获取你的邮箱地址。制作视频时，我们保存你上传的照片和生成的视频。支付信息由支付合作方处理，${b} 不会接触你的卡号。`] },
           { h: '我们如何使用', p: ['照片仅用于生成你请求的视频。邮箱用于账户运营、发送收据和服务通知（例如视频生成完成、你提交的举报已处理）以及回复客服请求。我们不发送营销邮件。我们不出售个人数据，也不会用你的照片训练模型。'] },
           { h: '存储与保留', p: [`文件加密存储在我们的基础设施服务商处。上传的照片${photoRetention}，生成的视频${videoRetention}；你也可以提前删除它们或注销账号。订单与支付记录按税务和财务要求保留。注销账号后，我们只保留邮箱地址的单向哈希，用于防止同一邮箱重复领取注册赠送。`] },
           { h: '安全检查', p: ['照片在使用前可能经过自动内容安全分类器检查，结果只用于执行内容规则，不作他用。公开表单使用防机器人服务保护，该服务可能处理你的 IP 地址和浏览器信号。'] },

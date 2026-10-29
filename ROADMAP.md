@@ -143,6 +143,10 @@
    - ~~#33~~ 已完成（2026-10-21）。可选的 yir.ai 视频服务商，见下文。
    - ~~#34~~ 已完成（2026-10-25）。可选的 NanoAPI 视频服务商，见下文。
    - ~~#35~~ 已完成（2026-10-25）。多舞蹈风格（`site.styles`），见下文。
+   - ~~#38~~ 已完成（2026-10-27）。可选的 haomaotoken（Seedance 2.0）视频服务商，见下文。
+   - ~~#40~~ 已完成（2026-10-27）。多人位置（`styles[].seats`），见下文。
+   - ~~#41~~ 已完成（2026-10-28）。邮箱验证码登录，见下文。
+   - ~~#42~~ 已完成（2026-10-28）。生成器登录弹窗、照片暂存、未勾选授权时提示，见下文。
 3. 第三批，变现：
    - ~~#6~~ 已完成（2026-10-21）。积分分批次与过期，见下文。
    - ~~#9~~ 已完成（2026-10-21）。兑换码，见下文。
@@ -202,6 +206,40 @@
 - 告警通道：所有告警和 D1 备份失败同时发到 `PAYMENT_NOTIFY_WEBHOOK_URL`（KV 去重）；新增“视频服务商余额”告警，每小时查一次，低于 10 美元告警。余额查询抽成 `src/server/video-balance.ts`，测试连接共用。
 - 测试：`tests/unit/pricing.test.ts`（`packageMakes`、`cheapestPackageCovering`）、`tests/unit/llms.test.ts`、`tests/unit/alerts.test.ts`（余额阈值、聊天群去重）；e2e 2 个（生成器就地购买到积分到账；暂停收款时就地购买禁用）。
 - 未验证：线上聊天群实际收到告警（飞书关键词）；余额告警在真实 yir 账户上触发。
+
+**#41 邮箱验证码登录**（2026-10-28，参考兄弟项目 kda 的交互）
+
+- 登录页 Google 按钮下方加邮箱验证码登录（`src/components/EmailSignIn.tsx`）：填邮箱发码 → 输 6 位验证码，60 秒倒计时重发、可换邮箱。接口 `/api/auth/email/start`、`/api/auth/email/verify`，规则在 `src/server/email-login.ts`。
+- 和 kda 的差别：验证码存 HMAC（`SESSION_SECRET` 作密钥）而不是裸 SHA-256；加了 IP 限流和每邮箱每小时 5 次上限；验证码邮件不进发件箱。迁移 `0017_email_login_codes.sql`，Cron 清理过期一天以上的记录，注销账号时删除。
+- 开了邮箱登录时 `signInHref` 去登录页（不再直接跳 Google），生成器注册按钮去掉 Google 图标；`sign_up` 统计按实际方式记 `email`。
+- 测试：`email-login.test.ts`（归一化、6 位码、HMAC、邮件渲染）；e2e 3 个（发码登录、错码与重复使用、冷却、输错上限、登录页流程）。
+- 未验证：线上真实收信（上线后用非 Gmail 邮箱收一次）。
+
+**#42 生成器登录弹窗与照片暂存**（2026-10-28，先在 tinydeskaivideo 上线验证再回到模板）
+
+- 主按钮不再因缺照片或没勾授权而变灰，点击时按顺序检查，缺什么就用顶部轻提示（`src/components/Toast.tsx`，`toast.warning`）说明，授权行滚到可见处并高亮。
+- 没登录时弹出登录框（`SignInModal`），和登录页共用 `SignInPanel`（Google、邮箱验证码、开发登录）。验证码登录不离开页面，登录后自动上传已选照片，不会自动扣积分生成。
+- Google 登录会整页跳走：跳转前 `src/lib/generator-draft.ts` 把照片缩到最长边 1280px、JPEG 0.85 存进 localStorage（1 小时有效，写不进就放弃），回来后恢复照片和风格并立即删除；退出登录时也删除。
+- e2e 里写死的 `short`/`full` 时长换成 `helpers.ts` 的 `SHORTEST`/`LONGEST`，派生站只留一档时长也能跑。
+- 测试：`generator-draft.test.ts`（1 小时内可读、过期删除、坏数据）；e2e 1 个（缺照片、缺授权的提示，弹窗验证码登录后照片还在）。
+- 未验证：Google 跳转回来恢复照片只在线上手动走过，e2e 没有覆盖（本地没有 Google）。
+
+**#40 多人位置**（2026-10-27）
+
+- 风格可选 `seats`：第一个位置是必填的主角，其余可选，每个位置一张照片，价格不变；只有 haomao 支持（多张参考图），doctor 和后台配置检查在其它服务商下报错。
+- 数据：迁移 `0016_generation_seats.sql`，主角照片仍在 `generations.upload_id`；清理跳过进行中任务的可选照片，举报下架时同一条成片的所有照片一起删除、拉黑，数据导出加 `generationSeats`。
+- 接口：`POST /api/generations` 接受 `seats: { seatId: uploadId }`，错误码 `invalid_seat`、`duplicate_photo`（按 id 和 sha256）、`seats_unsupported`。haomao 按风格里的位置顺序上传照片，prompt 由 `seatPrompt` 按实际填了的位置拼出。
+- 界面：生成器显示主角大格加可选格，可移除可选照片；授权文案换成“每张照片都已获得本人同意”。
+- 后台：生成任务列表加“位置数”列（主角 1 + 填了照片的可选位置）。
+- 测试：`haomao.test.ts`（拼 prompt、多图顺序）、`config-health` 补一条；e2e 1 个（未知位置、重复照片、正常出片，模板没有多人风格时跳过）。
+- 未验证：Seedance 一次替换多人的稳定性只在第一个站的干净底片上试过（5 人，第二版镜头顺序基本对上）。
+
+**#38 haomaotoken（Seedance 2.0）视频服务商**（2026-10-27）
+
+- 第四个可选 `VideoProvider`（`VIDEO_PROVIDER=haomao`，密钥 `HAOMAO_API_KEY`，配置 `site.video.haomao`）：照片 + 模板源视频 + 可选参考配乐（新增的 `styles[].audio`）做 Seedance 参考生视频。提交前把素材从 R2 上传到 haomaotoken 文件存储（`VideoSubmitInput` 新增 `imageKey`、`audioKey`）。
+- 没有回调，轮询 30 秒；任务失败用原请求体重提一次（走 `VideoStatus.next`）；401/402/403 映射为账户错误并告警；没有余额接口，测试连接只确认配了 Key（`BalanceQuery` 新增 `unsupported`）。
+- 测试：`tests/unit/haomao.test.ts`（上传、请求体、配乐、错误映射、重提、成本），`config-health`、`providers`、`probes` 各补一条。
+- 配乐：兄弟项目用同样的调用方式（参考配乐 + `generate_audio: true`）出的样片，音轨和参考配乐频谱相关 0.74–0.87（打乱时间基线 0.34），说明 Seedance 确实照着参考配乐出音轨，不需要事后合成。未验证：没有用真实 key 在模板里跑过一单；单价要第一个站上线时核对。没有幂等去重，Worker 中断时可能重复建任务。
 
 **#37 第二套主题、右下角同意卡片、页脚“问问 AI”**（2026-10-26，参考竞品 rumpelstiltskinai.dance 的外观）
 

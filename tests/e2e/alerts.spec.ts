@@ -1,5 +1,5 @@
 import { expect, test, type APIRequestContext } from '@playwright/test'
-import { buyPackage, credits, devLogin, durationCredits, json, post, uniqueEmail, uploadPhoto } from './helpers'
+import { SHORTEST, buyPackage, credits, devLogin, json, post, uniqueEmail, uploadPhoto } from './helpers'
 
 // 健康检查与死信：真实死信要主队列重试 10 次（约 35 分钟），这里用 /api/dev/dead-letter 模拟死信消费者收到消息；
 // 健康检查用 since 把统计窗口限定在本用例开始之后，不受之前运行留下的失败任务影响
@@ -13,7 +13,7 @@ type HealthCheck = {
 
 async function generate(request: APIRequestContext, mockOutcome: 'fail' | 'hang') {
   const { upload } = await json<{ upload: { id: string } }>(uploadPhoto(request), 201)
-  return (await json<{ generation: { id: string } }>(post(request, '/api/generations', { uploadId: upload.id, durationId: 'short', mockOutcome }), 201))
+  return (await json<{ generation: { id: string } }>(post(request, '/api/generations', { uploadId: upload.id, durationId: SHORTEST.id, mockOutcome }), 201))
     .generation.id
 }
 
@@ -36,7 +36,7 @@ test('死信：任务判失败并只退一次积分；健康检查告警，同�
 
   // 服务商一直不完成，队列消息最终进入死信队列：任务判失败、退积分
   const stuck = await generate(request, 'hang')
-  expect(await credits(request)).toBe(before - durationCredits('short'))
+  expect(await credits(request)).toBe(before - SHORTEST.credits)
   await expect.poll(() => status(request, stuck), { timeout: 30_000, intervals: [500] }).toBe('processing')
   expect(await json(post(request, '/api/dev/dead-letter', { generationId: stuck }))).toEqual({ failed: true })
   expect(await status(request, stuck)).toBe('failed')

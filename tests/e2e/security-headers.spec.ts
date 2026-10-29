@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { articlePath, site } from '../../src/config/site'
 import { PERMISSIONS_POLICY } from '../../src/server/csp'
-import { PHOTO, buyPackage, content, devLogin, uniqueEmail } from './helpers'
+import { PHOTO, SHORTEST, buyPackage, content, devLogin, uniqueEmail } from './helpers'
 
 const en = content.en
 const CSP = 'content-security-policy-report-only'
@@ -76,7 +76,7 @@ test('公开页、登录后生成和后台都没有 CSP 违规与水合错误；
   await page.goto('/')
   await expect(page.getByTestId('generate')).toBeVisible()
   await page.getByTestId('photo-input').setInputFiles(PHOTO)
-  await page.getByTestId('duration-short').click()
+  await page.getByTestId(`duration-${SHORTEST.id}`).click()
   await page.getByTestId('consent').check()
   await expect(page.getByTestId('generate')).toBeEnabled()
   await page.getByTestId('generate').click()

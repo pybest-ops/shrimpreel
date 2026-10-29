@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test'
 import { cheapestPackageCovering, formatPrice, site } from '../../src/config/site'
-import { PHOTO, content, credits, devLogin, durationCredits, ledger, pkg, uniqueEmail } from './helpers'
+import { PHOTO, SHORTEST, content, credits, devLogin, ledger, pkg, uniqueEmail } from './helpers'
 
 const STARTER = pkg('starter').credits
-const SHORT = durationCredits('short')
+const SHORT = SHORTEST.credits
 
 // 最小主路径：真实 UI 操作，mock 支付 + mock 生成，验证积分、视频、账单三处数据一致
 test('新用户：登录 → 购买 → 生成 → 个人中心看到视频与账单', async ({ page }, testInfo) => {
@@ -34,7 +34,7 @@ test('新用户：登录 → 购买 → 生成 → 个人中心看到视频与�
   // 按钮出现 = 已水合且会话加载完；之前的输入事件 React 接收不到
   await expect(page.getByTestId('generate')).toBeVisible()
   await page.getByTestId('photo-input').setInputFiles(PHOTO)
-  await page.getByTestId('duration-short').click()
+  await page.getByTestId(`duration-${SHORTEST.id}`).click()
   await page.getByTestId('consent').check()
   await expect(page.getByTestId('generate')).toBeEnabled()
   await page.getByTestId('generate').click()

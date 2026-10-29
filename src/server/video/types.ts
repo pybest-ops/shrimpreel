@@ -6,8 +6,14 @@ export interface VideoSubmitInput {
   style: Style
   durationSeconds: number
   imageUrl: string
+  // 照片在 R2 的 key：要先把素材转存到服务商存储的 provider（haomao）直接从 R2 读，不经过签名地址
+  imageKey: string
   sourceVideoUrl: string
   sourceVideoKey: string
+  // 多人风格可选位置的照片（R2 key），按 style.seats 的顺序；只有支持多张参考图的服务商（haomao）使用
+  seatImages?: Array<{ seatId: string; key: string }>
+  // 这个风格、这个时长档位的参考配乐在 R2 的 key（styles[].audio），没有则不带
+  audioKey?: string
   webhookUrl: string
   meta: Record<string, unknown>
 }
@@ -25,7 +31,7 @@ export type VideoStatus =
   | { state: 'failed'; code: string; message: string; retryable?: boolean }
 
 export interface VideoProvider {
-  id: 'fal' | 'yir' | 'nanoapi' | 'mock'
+  id: 'fal' | 'yir' | 'nanoapi' | 'haomao' | 'mock'
   submit(input: VideoSubmitInput): Promise<VideoSubmitResult>
   status(requestId: string, meta: Record<string, unknown>): Promise<VideoStatus>
   // 出一条成片的估算成本（美分），出片后写入 generations.provider_cost_cents

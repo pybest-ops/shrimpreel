@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { expect, test, type APIRequestContext } from '@playwright/test'
-import { ORIGIN, PHOTO, buyPackage, content, devLogin, json, post, uniqueEmail, uploadPhoto } from './helpers'
+import { ORIGIN, PHOTO, SHORTEST, buyPackage, content, devLogin, json, post, uniqueEmail, uploadPhoto } from './helpers'
 
 const ADMIN_EMAIL = 'admin@example.com'
 const t = content.en.share
@@ -14,7 +14,7 @@ function uniquePhoto() {
 async function renderedVideo(request: APIRequestContext, photo?: Buffer<ArrayBuffer>) {
   await buyPackage(request, 'starter')
   const uploadId = (await json<{ upload: { id: string } }>(uploadPhoto(request, photo), 201)).upload.id
-  const id = (await json<{ generation: { id: string } }>(post(request, '/api/generations', { uploadId, durationId: 'short' }), 201)).generation.id
+  const id = (await json<{ generation: { id: string } }>(post(request, '/api/generations', { uploadId, durationId: SHORTEST.id }), 201)).generation.id
   await expect
     .poll(async () => (await json<{ generation: { status: string } }>(request.get(`/api/generations/${id}`))).generation.status, {
       timeout: 60_000,
