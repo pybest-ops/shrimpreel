@@ -55,11 +55,14 @@ for (const [locale, scheme] of [
     // 未登录时生成器显示注册按钮：出现即说明已水合、会话接口可用
     await expect(page.getByTestId('generator-sign-up')).toBeVisible()
     await expect(page.locator('html')).toHaveAttribute('lang', locale === 'en' ? 'en' : /^zh/)
+    // 导航栏登录是弹窗，不离开当前页
     await page.getByTestId('nav-sign-in').click()
-    await expect(page).toHaveURL(/\/sign-in$/)
+    const modal = page.getByTestId('sign-in-modal')
+    await expect(modal).toBeVisible()
     // 会话配置加载完（出现 Google 按钮或“未配置”提示）后，不应有开发登录表单
     const t = content[locale].signIn
-    await expect(page.getByRole('link', { name: t.google }).or(page.getByText(t.notConfigured))).toBeVisible()
+    // 只有 Google 时是跳转链接，同时开了邮箱登录时是按钮
+    await expect(modal.getByRole('link', { name: t.google }).or(modal.getByRole('button', { name: t.google })).or(modal.getByText(t.notConfigured))).toBeVisible()
     await expect(page.getByTestId('dev-login')).toHaveCount(0)
     await testInfo.attach(`home-${locale}-${scheme}`, { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' })
     expect(errors).toEqual([])

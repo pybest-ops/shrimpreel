@@ -8,7 +8,20 @@ import { LogoMark } from './ui'
 
 // 生成器的登录弹窗：不离开页面，已选的照片留在内存里。登录方式和登录页共用 SignInPanel；
 // 登录成功（会话里出现用户）后自动关闭。Esc、点遮罩或右上角关闭；打开期间禁止背景滚动
-export function SignInModal({ redirect, onClose, onBeforeGoogle }: { redirect: string; onClose: () => void; onBeforeGoogle?: () => Promise<void> | void }) {
+// title、body：弹窗标题和说明，不传用生成器的文案（导航栏登录传登录页的文案）
+export function SignInModal({
+  redirect,
+  onClose,
+  onBeforeGoogle,
+  title,
+  body,
+}: {
+  redirect: string
+  onClose: () => void
+  onBeforeGoogle?: () => Promise<void> | void
+  title?: string
+  body?: string
+}) {
   const g = useContent().generator
   const { user } = useSession()
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -48,9 +61,9 @@ export function SignInModal({ redirect, onClose, onBeforeGoogle }: { redirect: s
         <LogoMark className="mx-auto size-12 text-base" />
         <div className="space-y-2">
           <h2 id="sign-in-modal-title" className="font-display text-2xl">
-            {g.signInTitle}
+            {title ?? g.signInTitle}
           </h2>
-          <p className="text-sm text-muted">{g.signInBody}</p>
+          <p className="text-sm text-muted">{body ?? g.signInBody}</p>
         </div>
         <SignInPanel redirect={redirect} onBeforeGoogle={onBeforeGoogle} />
       </div>

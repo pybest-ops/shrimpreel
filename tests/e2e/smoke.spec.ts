@@ -14,11 +14,16 @@ test('新用户：登录 → 购买 → 生成 → 个人中心看到视频与�
   await expect(page.getByTestId('generator-sign-up')).toBeVisible()
   await shot('01-landing')
 
+  // 导航栏登录是弹窗：在弹窗里登录后弹窗关闭，仍停在首页
   await page.getByTestId('nav-sign-in').click()
-  await expect(page).toHaveURL(/\/sign-in/)
-  await page.getByTestId('dev-email').fill(uniqueEmail('smoke'))
-  await page.getByTestId('dev-login').click()
-  await expect(page).toHaveURL(/\/dashboard$/)
+  const modal = page.getByTestId('sign-in-modal')
+  await expect(modal).toBeVisible()
+  await modal.getByTestId('dev-email').fill(uniqueEmail('smoke'))
+  await modal.getByTestId('dev-login').click()
+  await expect(modal).toHaveCount(0)
+  await expect(page).toHaveURL(/\/$/)
+  await expect(page.getByTestId('nav-credits')).toHaveText('0 credits')
+  await page.goto('/dashboard')
   await expect(page.getByTestId('dashboard-credits')).toHaveText('0 credits')
 
   await page.goto('/pricing')

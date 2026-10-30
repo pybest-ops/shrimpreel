@@ -1,9 +1,10 @@
 import { useNavigate, useRouterState } from '@tanstack/react-router'
 import { ChevronDown, Languages, LogOut, Menu, Moon, Sun, X } from 'lucide-react'
-import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { LOCALE_META, LOCALES } from '#/config/site'
 import { htmlLang, switchLocalePath, useContent, useLocale, useLocalePath } from '#/lib/i18n'
 import { useSession } from '#/lib/session'
+import { SignInModal } from './SignInModal'
 import { LocalLink, Logo } from './ui'
 
 export function Nav() {
@@ -71,6 +72,9 @@ function AccountButton() {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  // 登录弹窗：打开时记下当前页面地址作为登录后的回跳地址，null = 弹窗关闭
+  const [signInRedirect, setSignInRedirect] = useState<string | null>(null)
+  const closeSignIn = useCallback(() => setSignInRedirect(null), [])
 
   useEffect(() => {
     if (!open) return
@@ -84,9 +88,20 @@ function AccountButton() {
   if (loading) return <span className="inline-block h-9 w-20" aria-hidden />
   if (!user) {
     return (
-      <LocalLink to="/sign-in" className="eyebrow px-2 py-2 hover:text-accent" data-testid="nav-sign-in">
-        {c.nav.signIn}
-      </LocalLink>
+      <>
+        {/* 弹窗登录：邮箱验证码登录后留在当前页；Google 登录要跳出站外，回来时落回打开弹窗的页面（含查询串和锚点） */}
+        <button
+          type="button"
+          onClick={() => setSignInRedirect(`${location.pathname}${location.search}${location.hash}`)}
+          className="eyebrow px-2 py-2 hover:text-accent"
+          data-testid="nav-sign-in"
+        >
+          {c.nav.signIn}
+        </button>
+        {signInRedirect ? (
+          <SignInModal redirect={signInRedirect} onClose={closeSignIn} title={c.signIn.title} body={c.signIn.body} />
+        ) : null}
+      </>
     )
   }
   const initial = (user.name ?? user.email).slice(0, 1).toUpperCase()
