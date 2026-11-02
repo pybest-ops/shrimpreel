@@ -215,6 +215,9 @@ export const site = {
     ogImageSize: { width: 1200, height: 630 },
   },
 
+  // CSP img-src 额外放行的图片来源，只写确实在用的完整 origin，不用通配。这里是页脚目录站徽章的图片域名
+  cspImageHosts: [] as readonly string[],
+
   // 统计：推荐只填 cfBeaconToken（Cloudflare Web Analytics，不写 Cookie，不需要同意横幅）。
   // 填了 ga4Id 才启用 GA4：同时出现同意横幅和页脚“Cookie 设置”，访客接受前不加载 gtag.js（Consent Mode v2 basic 模式，见 lib/consent.ts）。
   // 填了 umamiWebsiteId 就在所有页面加载同域的 Umami 脚本（/s/script.js，由 Worker 代理，实例地址在 vars.UMAMI_ORIGIN，不进前端）；

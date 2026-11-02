@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { summarizeCspReports } from '#/server/csp'
+import { site } from '#/config/site'
+import { contentSecurityPolicy, summarizeCspReports } from '#/server/csp'
+
+describe('contentSecurityPolicy', () => {
+  it('img-src 放行 site.cspImageHosts，只写完整 origin，不用通配', () => {
+    const imgSrc = contentSecurityPolicy('n').split('; ').find((d) => d.startsWith('img-src '))!.split(' ')
+    for (const host of site.cspImageHosts) {
+      expect(host).toMatch(/^https:\/\/[a-z0-9.-]+$/)
+      expect(imgSrc).toContain(host)
+    }
+  })
+})
 
 describe('summarizeCspReports', () => {
   it('report-uri 格式：URL 去掉 query 和 hash（不把买家邮箱写进日志），inline 等关键字原样保留', () => {
