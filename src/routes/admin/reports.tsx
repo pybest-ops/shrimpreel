@@ -12,6 +12,7 @@ type Reports = {
   funnel: { visits: number; signups: number; checkout: number; paid: number; generated: number }
   daily: { day: string; currency: string; orders: number; cents: number }[]
   sources: { key: string; visits: number; signups: number; orders: number; cents: Record<string, number> }[]
+  landings: { key: string; landing: string; visits: number; signups: number; orders: number }[]
   byCountry: Grouped[]
   byProvider: Grouped[]
   byPackage: Grouped[]
@@ -75,6 +76,30 @@ function AdminReports() {
                     <td>{s.orders}</td>
                     <td>{pct(s.orders, s.signups)}</td>
                     <td>{centsText(s.cents)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Section>
+          <Section title="按来源与落地页（other=非公开页或历史数据）">
+            <table className="table-admin" data-testid="report-landings">
+              <thead>
+                <tr>
+                  <th>来源 / 媒介</th>
+                  <th>落地页</th>
+                  <th>访问</th>
+                  <th>注册</th>
+                  <th>付费订单</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.landings.map((l) => (
+                  <tr key={`${l.key}${l.landing}`}>
+                    <td>{l.key}</td>
+                    <td>{l.landing}</td>
+                    <td>{l.visits}</td>
+                    <td>{l.signups}</td>
+                    <td>{l.orders}</td>
                   </tr>
                 ))}
               </tbody>

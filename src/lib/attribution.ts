@@ -43,7 +43,8 @@ function currentTouch(): Touch {
   if (document.referrer) {
     try {
       const ref = new URL(document.referrer)
-      if (ref.hostname !== location.hostname && !isTransitHost(ref.hostname)) touch.referrer = `${ref.origin}${ref.pathname}`.slice(0, 200)
+      // 只记 origin：路径可能含会话 ID，来源判定也只用得到域名
+      if (ref.hostname !== location.hostname && !isTransitHost(ref.hostname)) touch.referrer = ref.origin.slice(0, 200)
     } catch {
       // 非法 referrer 忽略
     }

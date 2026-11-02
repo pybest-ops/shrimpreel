@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { classifyTouch, deviceFromUserAgent, parseAttribution } from '#/server/attribution'
 import { csvCell } from '#/server/reports'
+import { landingKey } from '#/server/seo'
 
 describe('classifyTouch', () => {
   it('广告点击 id 优先于 utm 和 referrer', () => {
@@ -26,6 +27,29 @@ describe('classifyTouch', () => {
     expect(classifyTouch({ referrer: 'https://www.google.co.jp/' })).toMatchObject({ source: 'google', medium: 'organic' })
     expect(classifyTouch({ referrer: 'https://t.co/abc' })).toMatchObject({ source: 'x', medium: 'social' })
     expect(classifyTouch({ referrer: 'https://www.some-blog.dev/post' })).toMatchObject({ source: 'some-blog.dev', medium: 'referral' })
+  })
+
+  it('AI 助手的 utm_source 和 referrer 归到同一来源', () => {
+    for (const touch of [
+      { utm_source: 'chatgpt.com' },
+      { utm_source: 'chat.openai.com' },
+      { utm_source: 'ChatGPT' },
+      { ref: 'chatgpt.com' },
+      { utm_source: 'chatgpt.com', referrer: 'https://chatgpt.com' },
+    ]) {
+      expect(classifyTouch(touch), JSON.stringify(touch)).toMatchObject({ source: 'chatgpt', medium: 'ai' })
+    }
+    expect(classifyTouch({ utm_source: 'perplexity.ai' })).toMatchObject({ source: 'perplexity', medium: 'ai' })
+    // 显式写了 utm_medium 的是人工投放的链接，按投放口径记
+    expect(classifyTouch({ utm_source: 'chatgpt', utm_medium: 'cpc' })).toMatchObject({ source: 'chatgpt', medium: 'cpc' })
+    // 只有名字里带 chatgpt 不算
+    expect(classifyTouch({ utm_source: 'notchatgpt.com' })).toMatchObject({ source: 'notchatgpt.com', medium: 'referral' })
+  })
+
+  it('UTM 和 AI referrer 指向不同来源时标记 unclear', () => {
+    expect(classifyTouch({ utm_source: 'newsletter', referrer: 'https://chatgpt.com' })).toMatchObject({ source: 'newsletter', medium: 'unclear' })
+    expect(classifyTouch({ utm_source: 'perplexity.ai', referrer: 'https://chatgpt.com' })).toMatchObject({ source: 'perplexity', medium: 'unclear' })
+    expect(classifyTouch({ utm_source: 'newsletter', referrer: 'https://www.google.com' })).toMatchObject({ source: 'newsletter', medium: 'referral' })
   })
 
   it('无信号、站内 referrer、非法 referrer 都算 direct', () => {
@@ -57,7 +81,13 @@ describe('parseAttribution', () => {
   it('解析 base64url cookie，丢弃未知字段并截断超长值', () => {
     const parsed = parseAttribution(encode({ first: { utm_source: 'a'.repeat(500), evil: '<script>' }, last: { referrer: 'https://x.com/' } }))
     expect(parsed?.first).toEqual({ utm_source: 'a'.repeat(300) })
-    expect(parsed?.last).toEqual({ referrer: 'https://x.com/' })
+    expect(parsed?.last).toEqual({ referrer: 'https://x.com' })
+  })
+
+  it('referrer 只保留 origin：路径和查询参数不落库，非法值丢弃', () => {
+    const parsed = parseAttribution(encode({ first: { referrer: 'https://chatgpt.com/c/private-id?q=secret' }, last: { referrer: 'not a url', landing: '/' } }))
+    expect(parsed?.first).toEqual({ referrer: 'https://chatgpt.com' })
+    expect(parsed?.last).toEqual({ landing: '/' })
   })
 
   it('损坏或空 cookie 返回 null', () => {
@@ -65,6 +95,17 @@ describe('parseAttribution', () => {
     expect(parseAttribution('%%%')).toBeNull()
     expect(parseAttribution(encode({ first: 'nope' }))).toBeNull()
     expect(parseAttribution('a'.repeat(5000))).toBeNull()
+  })
+})
+
+describe('landingKey', () => {
+  it('只保留公开页路径，其余归到 other，避免任意路径撑大统计表', () => {
+    expect(landingKey('/')).toBe('/')
+    expect(landingKey('/pricing')).toBe('/pricing')
+    expect(landingKey('/pricing/')).toBe('/pricing')
+    expect(landingKey('/dashboard')).toBe('other')
+    expect(landingKey('/made-up-page')).toBe('other')
+    expect(landingKey(undefined)).toBe('other')
   })
 })
 

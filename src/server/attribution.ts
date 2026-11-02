@@ -39,9 +39,20 @@ export function sanitizeTouch(value: unknown): Touch | undefined {
   const touch: Touch = {}
   for (const key of TOUCH_KEYS) {
     const raw = (value as Record<string, unknown>)[key]
-    if (typeof raw === 'string' && raw.trim()) touch[key] = raw.trim().slice(0, 300)
+    if (typeof raw !== 'string' || !raw.trim()) continue
+    const clean = key === 'referrer' ? originOf(raw) : raw.trim().slice(0, 300)
+    if (clean) touch[key] = clean
   }
   return Object.keys(touch).length ? touch : undefined
+}
+
+// referrer 只保留 origin，路径可能含会话 ID 等私人信息；旧 Cookie 里的完整地址也在这里收窄
+function originOf(url: string) {
+  try {
+    return new URL(url.trim()).origin.slice(0, 300)
+  } catch {
+    return null
+  }
 }
 
 export function parseAttribution(cookie: string | undefined): Attribution | null {
@@ -79,6 +90,8 @@ const AI_ASSISTANTS: Array<[RegExp, string]> = [
   [/(^|\.)deepseek\.com$/, 'deepseek'],
   [/(^|\.)you\.com$/, 'you'],
 ]
+// AI 助手的来源名，用于识别 utm_source=chatgpt 这种不带域名的写法
+const AI_NAMES = new Set(AI_ASSISTANTS.map(([, name]) => name))
 
 const SOCIAL: Array<[RegExp, string]> = [
   [/(^|\.)(facebook\.com|fb\.com|m\.facebook\.com)$/, 'facebook'],
@@ -114,12 +127,20 @@ export function classifyTouch(touch: Touch | undefined, selfHost?: string | null
   if (touch.gclid) return { source: 'google', medium: 'cpc', campaign }
   if (touch.msclkid) return { source: 'bing', medium: 'cpc', campaign }
   if (touch.ttclid) return { source: 'tiktok', medium: 'cpc', campaign }
-  const utmSource = lower(touch.utm_source) ?? lower(touch.ref)
-  if (utmSource) return { source: utmSource, medium: lower(touch.utm_medium) ?? 'referral', campaign }
-  if (touch.fbclid) return { source: 'facebook', medium: 'social', campaign }
   const host = hostOf(touch.referrer)
+  const ai = host ? match(host, AI_ASSISTANTS) : null
+  const utmSource = lower(touch.utm_source) ?? lower(touch.ref)
+  if (utmSource) {
+    const utmAi = match(utmSource, AI_ASSISTANTS) ?? (AI_NAMES.has(utmSource) ? utmSource : null)
+    // AI 助手给外链加的 UTM 只有来源、没有 utm_medium，和 referrer 归到同一来源；写了 utm_medium 的是人工投放链接
+    if (utmAi && !ai && !touch.utm_medium) return { source: utmAi, medium: 'ai', campaign }
+    if (utmAi && utmAi === ai) return { source: utmAi, medium: 'ai', campaign }
+    // UTM 和 AI referrer 指向不同来源时不猜，保留 UTM 来源并标记 unclear
+    if (ai) return { source: utmAi ?? utmSource, medium: 'unclear', campaign }
+    return { source: utmSource, medium: lower(touch.utm_medium) ?? 'referral', campaign }
+  }
+  if (touch.fbclid) return { source: 'facebook', medium: 'social', campaign }
   if (!host || host === selfHost?.replace(/^www\./, '') || isTransitHost(host)) return { source: 'direct', medium: 'none', campaign }
-  const ai = match(host, AI_ASSISTANTS)
   if (ai) return { source: ai, medium: 'ai', campaign }
   const engine = match(host, SEARCH_ENGINES)
   if (engine) return { source: engine, medium: 'organic', campaign }

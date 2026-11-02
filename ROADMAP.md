@@ -242,6 +242,14 @@
 - 测试：`tests/unit/haomao.test.ts`（上传、请求体、配乐、错误映射、重提、成本），`config-health`、`providers`、`probes` 各补一条。
 - 配乐：兄弟项目用同样的调用方式（参考配乐 + `generate_audio: true`）出的样片，音轨和参考配乐频谱相关 0.74–0.87（打乱时间基线 0.34），说明 Seedance 确实照着参考配乐出音轨，不需要事后合成。未验证：没有用真实 key 在模板里跑过一单；单价要第一个站上线时核对。没有幂等去重，Worker 中断时可能重复建任务。
 
+**#43 AI 来源归因与落地页统计**（2026-11-01）
+
+- `classifyTouch`：`utm_source=chatgpt.com` 这类 AI 助手的 UTM 和 referrer 归到同一来源（`chatgpt / ai`）；写了 `utm_medium` 的按人工投放记；UTM 和 AI referrer 指向不同来源时记 `unclear`，不猜。
+- referrer 只保留 origin：客户端不再记路径，服务端解析旧 Cookie 时也收窄，新写入的注册和订单不再带路径。
+- 新表 `visit_landing_stats`（迁移 `0019`，编号避开站点已用的 `0018`），路径用 `landingKey` 限定在公开页，其余归 `other`；后台报表新增“按来源与落地页”，含访问、注册和付费订单。
+- 测试：`attribution.test.ts`（AI 来源、`unclear`、origin、`landingKey`）、`attribution-consent.test.ts`；e2e 在原有归因用例上加落地页断言。
+- 未验证：ChatGPT 的真实点击；上线后要看后台是否出现 `chatgpt / ai`。
+
 **#37 第二套主题、右下角同意卡片、页脚“问问 AI”**（2026-10-26，参考竞品 rumpelstiltskinai.dance 的外观）
 
 - 主题：`site.theme` 写到 `<html data-skin>`；颜色、标题字体、圆角、主按钮、页脚、Logo 底色都改成 CSS 变量，原样式为 `classic`，新增 `acid`（锌黑 / 奶白、黄绿强调、无衬线粗标题、小圆角）。页脚和语言链接、Logo 去掉写死的颜色。

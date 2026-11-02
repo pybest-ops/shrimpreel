@@ -28,6 +28,7 @@ import { exchangeGoogleCode, googleAuthRedirect, googleClientId, googleOAuthConf
 import { publicGeneration, publicOrder, rateLimit, readJson, requireUser, pageParams } from './http'
 import { enqueueJob, failGeneration, handleDeadLetter, handleVideoJob } from './jobs'
 import { jobToken, serveR2Object, sniffImageType, verifyUploadSignature } from './media'
+import { landingKey } from './seo'
 import { getModerationProvider } from './moderation'
 import { processPaymentEvent } from './orders'
 import { reconcileOrder, reconcilePendingOrders } from './reconcile'
@@ -865,14 +866,20 @@ app.post('/api/t/visit', async (c) => {
   if (device === 'bot') return c.body(null, 204)
   await rateLimit(c.env.AUTH_LIMITER, `visit:${c.req.header('cf-connecting-ip') ?? 'local'}`)
   const body = await c.req.json<{ touch?: unknown }>().catch(() => ({ touch: undefined }))
-  const { source, medium } = classifyTouch(sanitizeTouch(body.touch), new URL(c.req.url).hostname)
+  const touch = sanitizeTouch(body.touch)
+  const { source, medium } = classifyTouch(touch, new URL(c.req.url).hostname)
   const country = c.req.header('cf-ipcountry')
-  await c.env.DB.prepare(
-    `INSERT INTO visit_stats (day, source, medium, country, device, visits) VALUES (?, ?, ?, ?, ?, 1)
-     ON CONFLICT (day, source, medium, country, device) DO UPDATE SET visits = visits + 1`,
-  )
-    .bind(nowIso().slice(0, 10), source, medium, country && country !== 'XX' ? country : 'unknown', device)
-    .run()
+  const day = nowIso().slice(0, 10)
+  await c.env.DB.batch([
+    c.env.DB.prepare(
+      `INSERT INTO visit_stats (day, source, medium, country, device, visits) VALUES (?, ?, ?, ?, ?, 1)
+       ON CONFLICT (day, source, medium, country, device) DO UPDATE SET visits = visits + 1`,
+    ).bind(day, source, medium, country && country !== 'XX' ? country : 'unknown', device),
+    c.env.DB.prepare(
+      `INSERT INTO visit_landing_stats (day, source, medium, landing, visits) VALUES (?, ?, ?, ?, 1)
+       ON CONFLICT (day, source, medium, landing) DO UPDATE SET visits = visits + 1`,
+    ).bind(day, source, medium, landingKey(touch?.landing)),
+  ])
   return c.body(null, 204)
 })
 

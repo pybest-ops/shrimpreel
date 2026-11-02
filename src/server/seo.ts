@@ -19,6 +19,14 @@ const ARTICLE_PATHS = ARTICLES.map((article) => `/${article.slug}`)
 // 可被索引的公开页面（账户、结账、后台页都带 noindex，不进 sitemap）
 export const PUBLIC_PATHS = ['/', '/pricing', '/guides', '/contact', '/report', '/privacy-policy', '/terms-of-service', '/refund-policy', ...ARTICLE_PATHS]
 
+// 落地页统计用的路径：去掉尾斜杠和语言前缀后只认公开页，其余归到 other，避免客户端传来的任意路径撑大统计表
+export function landingKey(landing: string | undefined) {
+  if (!landing) return 'other'
+  const prefix = LOCALES.filter((locale) => locale !== DEFAULT_LOCALE).find((locale) => landing === `/${locale}` || landing.startsWith(`/${locale}/`))
+  const path = (prefix ? landing.slice(prefix.length + 1) : landing).replace(/\/+$/, '') || '/'
+  return PUBLIC_PATHS.includes(path) ? path : 'other'
+}
+
 // lastmod 按页面取：文章用各自的 updatedAt，/guides 随最新文章变化，其余页面用 site.seo.updatedAt
 function lastModified(path: string) {
   const article = ARTICLES.find((a) => `/${a.slug}` === path)

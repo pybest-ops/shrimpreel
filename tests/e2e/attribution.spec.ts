@@ -7,6 +7,7 @@ type AdminOrder = { id: string; source: string | null; medium: string | null; ca
 type Reports = {
   funnel: { visits: number; signups: number; checkout: number; paid: number }
   sources: Array<{ key: string; visits: number; signups: number; orders: number }>
+  landings: Array<{ key: string; landing: string; visits: number; signups: number; orders: number }>
 }
 
 // 广告/渠道落地 → 注册 → 下单 → 付款，来源贯穿全链路；direct 回访不覆盖最近一次有来源的触达
@@ -46,6 +47,7 @@ test('来源归因：UTM 落地后 direct 回访，注册与订单仍记在原�
 
     const reports = await json<Reports>(admin.get('/api/admin/reports?days=1'))
     expect(reports.sources.find((s) => s.key === `${source} / launch`)).toMatchObject({ visits: 1, signups: 1, orders: 1 })
+    expect(reports.landings.find((l) => l.key === `${source} / launch`)).toMatchObject({ landing: '/', visits: 1, signups: 1, orders: 1 })
     expect(reports.funnel.paid).toBeGreaterThanOrEqual(1)
     expect(reports.funnel.signups).toBeGreaterThanOrEqual(reports.funnel.paid)
 

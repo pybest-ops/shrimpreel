@@ -1,6 +1,7 @@
 // 后台经营报表：收入（按天/来源/国家/支付商/套餐）、注册漏斗、按来源的转化、退款率、订单 CSV 导出。
 // 金额一律按实收币种汇总净额（实收 − 已退），见 NET_CENTS。
 import type { Hono } from 'hono'
+import { landingKey } from './seo'
 import type { AppContext } from './types'
 
 const NET_CENTS = 'COALESCE(paid_amount_cents, amount_cents) - refunded_amount_cents'
@@ -27,7 +28,7 @@ export function registerReportRoutes(routes: Hono<AppContext>) {
   routes.get('/reports', async (c) => {
     const db = c.env.DB
     const { days, since, sinceDay } = sinceFor(c.req.query('days'))
-    const [daily, bySource, byCountry, byProvider, byPackage, visits, visitsBySource, signupsBySource, funnel, refunds] =
+    const [daily, bySource, byCountry, byProvider, byPackage, visits, visitsBySource, signupsBySource, funnel, refunds, landingVisits, landingSignups, landingOrders] =
       await db.batch([
         db
           .prepare(
@@ -70,6 +71,26 @@ export function registerReportRoutes(routes: Hono<AppContext>) {
              FROM orders WHERE ${PAID} AND paid_at >= ? GROUP BY 1`,
           )
           .bind(since),
+        db
+          .prepare(
+            `SELECT source || ' / ' || medium AS key, landing, SUM(visits) AS n FROM visit_landing_stats WHERE day >= ?
+             GROUP BY 1, 2 ORDER BY n DESC LIMIT 100`,
+          )
+          .bind(sinceDay),
+        db
+          .prepare(
+            `SELECT COALESCE(signup_source, 'unknown') || ' / ' || COALESCE(signup_medium, 'unknown') AS key,
+               json_extract(attribution, '$.first.landing') AS landing, COUNT(*) AS n
+             FROM users WHERE created_at >= ? GROUP BY 1, 2 LIMIT 500`,
+          )
+          .bind(since),
+        db
+          .prepare(
+            `SELECT COALESCE(source, 'unknown') || ' / ' || COALESCE(medium, 'unknown') AS key,
+               json_extract(attribution, '$.last.landing') AS landing, COUNT(*) AS n
+             FROM orders WHERE ${PAID} AND paid_at >= ? GROUP BY 1, 2 LIMIT 500`,
+          )
+          .bind(since),
       ])
 
     // 按来源的转化表：访问（会话）→ 注册（首次触达）→ 付费订单（最近触达）
@@ -90,6 +111,21 @@ export function registerReportRoutes(routes: Hono<AppContext>) {
     for (const row of signupsBySource!.results as Array<{ key: string; n: number }>) sourceRow(row.key).signups = row.n
     for (const [key, value] of paidBySource) Object.assign(sourceRow(key), { orders: value.orders, cents: value.cents })
 
+    // 按来源和落地页的转化表：注册、订单的 landing 是原始路径，归一后才能和访问表合并；老数据没有 landing，记为 other
+    const landings = new Map<string, { key: string; landing: string; visits: number; signups: number; orders: number }>()
+    const addLanding = (rows: unknown[], field: 'visits' | 'signups' | 'orders') => {
+      for (const row of rows as Array<{ key: string; landing: string | null; n: number }>) {
+        const landing = landingKey(row.landing ?? undefined)
+        const id = `${row.key}\n${landing}`
+        const entry = landings.get(id) ?? { key: row.key, landing, visits: 0, signups: 0, orders: 0 }
+        entry[field] += row.n
+        landings.set(id, entry)
+      }
+    }
+    addLanding(landingVisits!.results, 'visits')
+    addLanding(landingSignups!.results, 'signups')
+    addLanding(landingOrders!.results, 'orders')
+
     const f = (funnel!.results[0] ?? {}) as Record<string, number | null>
     return c.json({
       days,
@@ -103,6 +139,7 @@ export function registerReportRoutes(routes: Hono<AppContext>) {
       },
       daily: daily!.results,
       sources: [...sources.values()].sort((a, b) => b.orders - a.orders || b.signups - a.signups || b.visits - a.visits),
+      landings: [...landings.values()].sort((a, b) => b.orders - a.orders || b.signups - a.signups || b.visits - a.visits),
       byCountry: byCountry!.results,
       byProvider: byProvider!.results,
       byPackage: byPackage!.results,

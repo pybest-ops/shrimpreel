@@ -48,7 +48,7 @@ describe('captureAttribution', () => {
     const env = browser(null)
     const { captureAttribution } = await load()
     captureAttribution(false)
-    expect(decode(env.jar.get('vt_attr')!).first).toMatchObject({ utm_source: 'launch', landing: '/pricing', referrer: 'https://news.example.org/post/1' })
+    expect(decode(env.jar.get('vt_attr')!).first).toMatchObject({ utm_source: 'launch', landing: '/pricing', referrer: 'https://news.example.org' })
     expect(env.fetch).toHaveBeenCalledTimes(1)
   })
 
