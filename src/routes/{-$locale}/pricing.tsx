@@ -5,7 +5,7 @@ import { Pricing } from '#/components/Pricing'
 import { Breadcrumbs, LocalLink } from '#/components/ui'
 import { articlePath } from '#/config/site'
 import { getContent, localeFromParam, pageHead, useContent } from '#/lib/i18n'
-import { breadcrumbJsonLd, jsonLdScript } from '#/lib/seo'
+import { breadcrumbJsonLd, jsonLdScript, pricingJsonLd } from '#/lib/seo'
 
 // 可见面包屑与 BreadcrumbList 用同一份数据，保证结构化数据与页面内容一致
 const breadcrumbItems = (c: ReturnType<typeof getContent>) => [{ name: c.nav.pricing, path: '/pricing' }]
@@ -16,7 +16,10 @@ export const Route = createFileRoute('/{-$locale}/pricing')({
     const c = getContent(locale)
     return {
       ...pageHead(locale, '/pricing', c.meta.pricingTitle, c.meta.pricingDescription),
-      scripts: [jsonLdScript(breadcrumbJsonLd(locale, c.meta.breadcrumbHome, breadcrumbItems(c)))],
+      scripts: [
+        jsonLdScript(breadcrumbJsonLd(locale, c.meta.breadcrumbHome, breadcrumbItems(c))),
+        jsonLdScript(pricingJsonLd(locale, c.meta.pricingDescription, c.pricing.packages, c.pricing.plans)),
+      ],
     }
   },
   component: PricingPage,

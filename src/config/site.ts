@@ -212,6 +212,8 @@ export const site = {
     indexNowKey: '',
     // 品牌社媒主页，写进 Organization.sameAs
     sameAs: [] as string[],
+    // 页面上有真实免费档时为 true：结构化数据的最低价写 0，并列出免费 Offer
+    hasFreeTier: false as boolean,
     ogImageSize: { width: 1200, height: 630 },
   },
 

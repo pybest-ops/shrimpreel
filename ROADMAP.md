@@ -242,6 +242,12 @@
 - 测试：`tests/unit/haomao.test.ts`（上传、请求体、配乐、错误映射、重提、成本），`config-health`、`providers`、`probes` 各补一条。
 - 配乐：兄弟项目用同样的调用方式（参考配乐 + `generate_audio: true`）出的样片，音轨和参考配乐频谱相关 0.74–0.87（打乱时间基线 0.34），说明 Seedance 确实照着参考配乐出音轨，不需要事后合成。未验证：没有用真实 key 在模板里跑过一单；单价要第一个站上线时核对。没有幂等去重，Worker 中断时可能重复建任务。
 
+**#44 文章锚点与价格结构化数据**（2026-11-02）
+
+- 文章 H2 按标题生成 id（`src/lib/anchor.ts`），可以直接引用具体小节。
+- 首页 `AggregateOffer` 计入在售订阅；`site.seo.hasFreeTier` 为 true 时最低价写 0。价格页新增 `pricingJsonLd`，逐项列出页面可见的免费档、积分包和订阅。
+- 测试：`seo-jsonld.test.ts`。
+
 **#43 AI 来源归因与落地页统计**（2026-11-01）
 
 - `classifyTouch`：`utm_source=chatgpt.com` 这类 AI 助手的 UTM 和 referrer 归到同一来源（`chatgpt / ai`）；写了 `utm_medium` 的按人工投放记；UTM 和 AI referrer 指向不同来源时记 `unclear`，不猜。

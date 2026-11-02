@@ -2,6 +2,7 @@ import { createFileRoute, notFound } from '@tanstack/react-router'
 import { ArticleCards } from '#/components/ArticleCards'
 import { Breadcrumbs, formatDay } from '#/components/ui'
 import { findArticle, relatedArticles, site } from '#/config/site'
+import { anchorId } from '#/lib/anchor'
 import { absoluteUrl, getContent, localeFromParam, pageHead, useContent, useLocale, useLocalePath } from '#/lib/i18n'
 import { articleJsonLd, breadcrumbJsonLd, jsonLdScript } from '#/lib/seo'
 
@@ -84,7 +85,9 @@ function ArticlePage() {
       <div className="prose-article mt-6">
         {text.sections.map((section) => (
           <section key={section.h}>
-            <h2>{section.h}</h2>
+            <h2 id={anchorId(section.h)} className="scroll-mt-24">
+              {section.h}
+            </h2>
             {section.p.map((paragraph) => (
               <p key={paragraph}>{paragraph}</p>
             ))}

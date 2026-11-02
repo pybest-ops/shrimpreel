@@ -1,6 +1,6 @@
 // 结构化数据（JSON-LD）。全部由 site 配置与文案生成，上新词无需改这里。
 // 注意：不要编造 aggregateRating / review，SoftwareApplication 没有评分时拿不到星级富结果，但实体信息仍会被理解。
-import { defaultStyle, localePath, site, type Locale } from '#/config/site'
+import { defaultStyle, localePath, sellingPlans, site, type Locale } from '#/config/site'
 import { absoluteUrl, htmlLang } from './i18n'
 
 const ORG_ID = absoluteUrl('/#organization')
@@ -29,9 +29,23 @@ function priceOf(cents: number) {
   return (cents / 100).toFixed(2)
 }
 
-// 首页：组织 + 网站 + 应用（全部积分包汇总成 AggregateOffer）+ 示例视频
+// 应用本身的描述：首页和价格页共用，价格信息由各页的 offers 补充
+function softwareApplication(locale: Locale, description: string) {
+  return {
+    '@type': 'SoftwareApplication',
+    name: site.brandName,
+    url: absoluteUrl(localePath(locale, '/')),
+    applicationCategory: 'MultimediaApplication',
+    operatingSystem: 'Web',
+    description,
+    inLanguage: htmlLang(locale),
+    publisher: { '@id': ORG_ID },
+  }
+}
+
+// 首页：组织 + 网站 + 应用（免费档、积分包和在售订阅汇总成 AggregateOffer）+ 示例视频
 export function homeJsonLd(locale: Locale, description: string, video: { name: string; description: string }) {
-  const prices = site.packages.map((p) => p.priceCents)
+  const prices = [...(site.seo.hasFreeTier ? [0] : []), ...[...site.packages, ...sellingPlans].map((p) => p.priceCents)]
   const sample = defaultStyle.examples.aiVersions[0]
   return {
     '@context': 'https://schema.org',
@@ -39,20 +53,13 @@ export function homeJsonLd(locale: Locale, description: string, video: { name: s
       organization(),
       { '@type': 'WebSite', '@id': SITE_ID, url: absoluteUrl('/'), name: site.brandName, inLanguage: htmlLang(locale), publisher: { '@id': ORG_ID } },
       {
-        '@type': 'SoftwareApplication',
-        name: site.brandName,
-        url: absoluteUrl(localePath(locale, '/')),
-        applicationCategory: 'MultimediaApplication',
-        operatingSystem: 'Web',
-        description,
-        inLanguage: htmlLang(locale),
-        publisher: { '@id': ORG_ID },
+        ...softwareApplication(locale, description),
         offers: {
           '@type': 'AggregateOffer',
           priceCurrency: site.packages[0]!.currency,
           lowPrice: priceOf(Math.min(...prices)),
           highPrice: priceOf(Math.max(...prices)),
-          offerCount: site.packages.length,
+          offerCount: prices.length,
         },
       },
       ...(sample
@@ -68,6 +75,26 @@ export function homeJsonLd(locale: Locale, description: string, video: { name: s
             },
           ]
         : []),
+    ],
+  }
+}
+
+// 价格页：逐项列出页面上可见的免费档、积分包和在售订阅，名称用页面文案
+export function pricingJsonLd(
+  locale: Locale,
+  description: string,
+  packNames: Record<string, { name: string }>,
+  planNames: Record<string, { name: string }>,
+) {
+  const url = absoluteUrl(localePath(locale, '/pricing'))
+  const offer = (name: string, cents: number, priceCurrency: string) => ({ '@type': 'Offer', name, price: priceOf(cents), priceCurrency, url })
+  return {
+    '@context': 'https://schema.org',
+    ...softwareApplication(locale, description),
+    offers: [
+      ...(site.seo.hasFreeTier ? [offer('Free', 0, site.packages[0]!.currency)] : []),
+      ...site.packages.map((p) => offer(packNames[p.id]!.name, p.priceCents, p.currency)),
+      ...sellingPlans.map((p) => offer(planNames[p.id]!.name, p.priceCents, p.currency)),
     ],
   }
 }
