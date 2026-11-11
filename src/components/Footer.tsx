@@ -1,4 +1,3 @@
-import { LifeBuoy } from 'lucide-react'
 import { ARTICLES, site } from '#/config/site'
 import { ASK_AI, askAiUrl } from '#/lib/ask-ai'
 import { CONSENT_OPEN_EVENT } from '#/lib/consent'
@@ -118,19 +117,5 @@ function AskAi() {
         </ul>
       </div>
     </div>
-  )
-}
-
-export function SupportButton() {
-  const c = useContent()
-  return (
-    <LocalLink
-      to="/contact"
-      aria-label={c.support.label}
-      title={c.support.label}
-      className="fixed right-5 bottom-5 z-30 grid size-12 place-items-center rounded-full bg-ink text-ink-fg shadow-lg transition hover:scale-105"
-    >
-      <LifeBuoy className="size-5" />
-    </LocalLink>
   )
 }

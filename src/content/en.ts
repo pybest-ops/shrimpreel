@@ -289,7 +289,27 @@ export function en(s: S) {
       askAiLabel: (ai: string) => `Ask ${ai} about ${b}`,
       askAiPrompt: (url: string, llms: string) => `What is ${b} (${url})? Summarize what it does, how pricing works and who it is for. Site summary for AI: ${llms}`,
     },
-    support: { label: 'Help & support' },
+    // 右下角反馈浮窗（components/FeedbackWidget.tsx）；账单、退款这类要回复的问题引到联系页
+    feedback: {
+      button: 'Feedback',
+      eyebrow: 'Product feedback',
+      title: 'Send feedback',
+      body: 'Bugs, ideas, or a quick note. Every message gets read.',
+      typeLegend: 'Feedback type',
+      types: { idea: 'Idea', bug: 'Bug', praise: 'Praise', other: 'Other' } as Record<string, string>,
+      message: 'Your message',
+      placeholder: 'What worked, what didn’t, what you wish existed…',
+      email: 'Email or handle',
+      optional: 'optional',
+      emailPlaceholder: 'So we can reply (optional)',
+      send: 'Send feedback',
+      sentTitle: 'Thanks, message received',
+      sentBody: 'Every message gets read. If you left an email, we may reply.',
+      done: 'Done',
+      close: 'Close feedback dialog',
+      needReply: 'Need an answer about billing or an order?',
+      contactLink: 'Contact support',
+    },
     // 统计同意横幅：只在配置了 GA4 时出现
     consent: {
       title: 'Analytics cookies',

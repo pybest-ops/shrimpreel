@@ -70,7 +70,20 @@ const REASONS_ZH: Record<string, string> = {
   other: '其他',
 }
 
-const TOPICS_ZH: Record<string, string> = { general: '一般咨询', billing: '账单', bug: 'Bug', partnership: '合作' }
+const TOPICS_ZH: Record<string, string> = {
+  general: '一般咨询',
+  billing: '账单',
+  bug: 'Bug',
+  partnership: '合作',
+  feedback_idea: '反馈·建议',
+  feedback_bug: '反馈·Bug',
+  feedback_praise: '反馈·好评',
+  feedback_other: '反馈·其他',
+}
+
+function isEmail(value: string) {
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(value)
+}
 
 function span(minutes: number) {
   return minutes % 60 === 0 ? `${minutes / 60} 小时` : `${minutes} 分钟`
@@ -296,9 +309,10 @@ const ADMIN_RENDERERS: { [K in AdminTemplate]: Render<K> } = {
   admin_contact: (p, ctx) => ({
     subject: `[${brand}] 新留言：${TOPICS_ZH[p.topic] ?? p.topic}`,
     heading: '新留言',
-    paragraphs: [`来自：${p.email}（直接回复本邮件即可回复对方）`, p.message],
+    // 反馈浮窗的邮箱可以留空或只填昵称：不是邮箱地址时不能当回复地址，回复落到客服邮箱
+    paragraphs: [isEmail(p.email) ? `来自：${p.email}（直接回复本邮件即可回复对方）` : `来自：${p.email || '匿名访客'}（没有留可回复的邮箱）`, p.message],
     cta: { label: '在后台查看', url: `${ctx.siteUrl}/admin/messages` },
-    replyTo: p.email,
+    replyTo: isEmail(p.email) ? p.email : undefined,
   }),
 
   admin_alert: (p, ctx) => {

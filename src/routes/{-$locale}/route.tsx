@@ -1,5 +1,6 @@
 import { Outlet, createFileRoute } from '@tanstack/react-router'
-import { Footer, SupportButton } from '#/components/Footer'
+import { FeedbackWidget } from '#/components/FeedbackWidget'
+import { Footer } from '#/components/Footer'
 import { Nav } from '#/components/Nav'
 import { SiteNotice } from '#/components/SiteNotice'
 import { DEFAULT_LOCALE, isLocale } from '#/config/site'
@@ -22,7 +23,7 @@ function LocaleLayout() {
         <Outlet />
       </main>
       <Footer />
-      <SupportButton />
+      <FeedbackWidget />
     </>
   )
 }

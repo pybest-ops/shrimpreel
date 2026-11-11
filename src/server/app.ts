@@ -945,6 +945,32 @@ app.post('/api/contact', async (c) => {
   return c.json({ ok: true }, 201)
 })
 
+// 站内反馈浮窗（components/FeedbackWidget.tsx）：和留言共用 contact_messages 表和后台“用户留言”页，
+// topic 记为 feedback_<类型>；邮箱选填（可以留空），访客所在页面追加在正文末尾，方便后台定位
+const FEEDBACK_TYPES = ['idea', 'bug', 'praise', 'other']
+app.post('/api/feedback', async (c) => {
+  const ip = c.req.header('cf-connecting-ip')
+  await rateLimit(c.env.AUTH_LIMITER, `feedback:${ip ?? 'local'}`)
+  const body = await readJson<{ type: string; message: string; email: string; page: string; turnstileToken: string }>(c)
+  const user = c.get('user')
+  const message = (body.message ?? '').trim()
+  if (message.length < 3 || message.length > 2000) throw new ApiError(400, 'invalid_message')
+  const type = FEEDBACK_TYPES.includes(body.type ?? '') ? body.type! : 'other'
+  const email = (typeof body.email === 'string' ? body.email : (user?.email ?? '')).trim().slice(0, 200)
+  // 只收站内路径，其它（含完整 URL）一律丢弃
+  const page = typeof body.page === 'string' && /^\/[^\s]{0,299}$/.test(body.page) ? body.page : null
+  await verifyTurnstile(c.env, body.turnstileToken, ip)
+  const id = createId('msg')
+  const text = page ? `${message}\n\n[page] ${page}` : message
+  await c.env.DB.prepare(
+    'INSERT INTO contact_messages (id, user_id, email, topic, message, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  )
+    .bind(id, user?.id ?? null, email, `feedback_${type}`, text, 'open', nowIso())
+    .run()
+  await notifyContactMessage(c.env, { id, email, topic: `feedback_${type}`, message: text })
+  return c.json({ ok: true }, 201)
+})
+
 // 内容举报 / 下架申请：无需登录；管理员在 /admin/takedowns 按 due_at 处理
 app.post('/api/takedowns', async (c) => {
   const ip = c.req.header('cf-connecting-ip')

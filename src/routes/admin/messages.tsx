@@ -8,7 +8,16 @@ export const Route = createFileRoute('/admin/messages')({
 
 type MessageRow = { id: string; user_id: string | null; email: string; topic: string; message: string; status: 'open' | 'closed'; created_at: string }
 
-const TOPICS: Record<string, string> = { general: '一般咨询', billing: '账单', bug: 'Bug', partnership: '合作' }
+const TOPICS: Record<string, string> = {
+  general: '一般咨询',
+  billing: '账单',
+  bug: 'Bug',
+  partnership: '合作',
+  feedback_idea: '反馈·建议',
+  feedback_bug: '反馈·Bug',
+  feedback_praise: '反馈·好评',
+  feedback_other: '反馈·其他',
+}
 
 function AdminMessages() {
   const [status, setStatus] = useState<'open' | 'closed'>('open')
@@ -41,9 +50,14 @@ function AdminMessages() {
             <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
               <div className="flex items-center gap-2">
                 <span className="chip">{TOPICS[m.topic] ?? m.topic}</span>
-                <a href={`mailto:${m.email}`} className="font-medium hover:underline">
-                  {m.email}
-                </a>
+                {/* 反馈浮窗的邮箱选填，可能为空或只是昵称，只有像邮箱的才做成链接 */}
+                {m.email.includes('@') ? (
+                  <a href={`mailto:${m.email}`} className="font-medium hover:underline">
+                    {m.email}
+                  </a>
+                ) : (
+                  <span className="font-medium">{m.email || '匿名'}</span>
+                )}
                 {m.user_id ? <span className="text-xs text-muted">已登录用户</span> : null}
               </div>
               <div className="flex items-center gap-3">

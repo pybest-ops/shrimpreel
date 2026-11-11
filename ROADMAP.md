@@ -9,6 +9,7 @@
   - e2e：`npm run test:e2e`（64 个用例全部通过，2026-10-24）。
   - SEO：`npm run seo:check`（20 个页面 0 error）。
   - 支付商 sandbox（2026-10-21，`SANDBOX_WEBHOOK=1`，经隧道收真实 webhook）：Dodo 付款、拒付、部分退款 3 个用例通过，订阅用例的首付、激活、积分和门户通过，取消续费因 test 密钥缺 Subscriptions 写入返回 403；Waffo 付款、拒付和订阅 3 个用例全部通过。
+- 站内反馈浮窗（2026-11-11）：`FeedbackWidget` 取代右下角客服圆钮，`POST /api/feedback` 写入 `contact_messages`（topic `feedback_<类型>`），后台留言页和管理员提醒共用；新增 `tests/e2e/feedback.spec.ts` 3 个用例。
 - 模板全面评审（2026-10-20）中不需要产品决策的 P0/P1 已在本地完成：
   - 工程：GitHub Actions CI（typecheck、单元测试、build，e2e 单独一个 job 并上传报告；Playwright 在 CI 重试 1 次）；README 改为 upstream remote 的多站升级流程。
   - SEO 与内链：文章改为可扩展集合（`site.articles`）；`/guides` 列表页进入导航和页脚；文章页有相关文章和可见面包屑，价格页面包屑与 BreadcrumbList 一致；FAQ、价格页、联系页链接到文章；语言切换改为可抓取的 `<a hreflang>`；sitemap `lastmod` 按页面取。
