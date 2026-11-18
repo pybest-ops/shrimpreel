@@ -2,6 +2,7 @@ import { createFileRoute, notFound } from '@tanstack/react-router'
 import { ArticleCards } from '#/components/ArticleCards'
 import { Breadcrumbs, formatDay } from '#/components/ui'
 import { findArticle, relatedArticles, site } from '#/config/site'
+import type { ArticleContent } from '#/content/en'
 import { anchorId } from '#/lib/anchor'
 import { absoluteUrl, getContent, localeFromParam, pageHead, useContent, useLocale, useLocalePath } from '#/lib/i18n'
 import { articleJsonLd, breadcrumbJsonLd, jsonLdScript } from '#/lib/seo'
@@ -21,9 +22,9 @@ export const Route = createFileRoute('/{-$locale}/$slug')({
     const { article } = loaderData
     const locale = localeFromParam(params.locale)
     const c = getContent(locale)
-    const text = c.articles[article.key]
+    const text: ArticleContent = c.articles[article.key]
     const path = `/${article.slug}`
-    const head = pageHead(locale, path, `${text.title} | ${site.brandName}`, text.description)
+    const head = pageHead(locale, path, `${text.seoTitle ?? text.title} | ${site.brandName}`, text.description)
     return {
       ...head,
       meta: [
@@ -62,7 +63,7 @@ function ArticlePage() {
   const c = useContent()
   const locale = useLocale()
   const lp = useLocalePath()
-  const text = c.articles[article.key]
+  const text: ArticleContent = c.articles[article.key]
   const related = relatedArticles(article)
   return (
     <article className="container-page max-w-3xl py-16">
@@ -90,6 +91,29 @@ function ArticlePage() {
             </h2>
             {section.p.map((paragraph) => (
               <p key={paragraph}>{paragraph}</p>
+            ))}
+            {/* 实测原片、合成结果和局部图直接在正文展示，不自动播放视频。 */}
+            {section.media?.map((item) => (
+              <figure key={item.src} className="my-6">
+                {item.type === 'video' ? (
+                  <video
+                    src={item.src}
+                    poster={item.poster}
+                    width={item.width}
+                    height={item.height}
+                    controls
+                    playsInline
+                    preload="none"
+                    aria-label={item.alt}
+                    className="mx-auto max-h-[36rem] w-full rounded-xl border border-line object-contain"
+                  >
+                    <a href={item.src}>{item.alt}</a>
+                  </video>
+                ) : (
+                  <img src={item.src} alt={item.alt} width={item.width} height={item.height} loading="lazy" decoding="async" className="h-auto w-full rounded-xl border border-line" />
+                )}
+                <figcaption className="mt-2 text-sm leading-6 text-muted">{item.caption}</figcaption>
+              </figure>
             ))}
           </section>
         ))}

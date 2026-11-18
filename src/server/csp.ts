@@ -6,6 +6,7 @@
 //   Google 登录与 One Tap https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid
 //   Turnstile https://developers.cloudflare.com/turnstile/reference/content-security-policy/
 //   Cloudflare Web Analytics：脚本在 static.cloudflareinsights.com，数据发到 cloudflareinsights.com
+//   Clarity：https://learn.microsoft.com/en-us/clarity/setup-and-installation/clarity-csp
 // 支付收银台是整页跳转，不受 CSP 限制。
 import { site } from '#/config/site'
 
@@ -16,6 +17,8 @@ export function createNonce() {
 }
 
 export function contentSecurityPolicy(nonce: string) {
+  // Clarity 动态脚本和上报节点；只在配置项目 ID 时开放，不放宽内联脚本限制。
+  const clarityHosts = site.analytics.clarityId ? ['https://*.clarity.ms', 'https://c.bing.com'] : []
   const directives: Record<string, string[]> = {
     'default-src': ["'self'"],
     'script-src': [
@@ -23,13 +26,14 @@ export function contentSecurityPolicy(nonce: string) {
       `'nonce-${nonce}'`,
       'https://www.googletagmanager.com',
       'https://static.cloudflareinsights.com',
+      ...(site.analytics.clarityId ? ['https://*.clarity.ms'] : []),
       'https://challenges.cloudflare.com',
       'https://accounts.google.com/gsi/client',
     ],
     // React 的 style 属性属于内联样式，只能放开 'unsafe-inline'（style-src 里有 nonce 时它会被忽略，所以这里不加 nonce）
     'style-src': ["'self'", "'unsafe-inline'", 'https://accounts.google.com/gsi/style'],
     // blob:：生成器里上传前的照片预览；站点额外的图片来源（如目录站徽章）写在 site.cspImageHosts
-    'img-src': ["'self'", 'data:', 'blob:', 'https://www.googletagmanager.com', 'https://*.google-analytics.com', ...site.cspImageHosts],
+    'img-src': ["'self'", 'data:', 'blob:', 'https://www.googletagmanager.com', 'https://*.google-analytics.com', ...site.cspImageHosts, ...clarityHosts],
     'connect-src': [
       "'self'",
       'https://www.googletagmanager.com',
@@ -37,6 +41,7 @@ export function contentSecurityPolicy(nonce: string) {
       // GA4 官方清单就是 *.google.com（会发到 region1.analytics.google.com 等）
       'https://*.google.com',
       'https://cloudflareinsights.com',
+      ...clarityHosts,
       'https://accounts.google.com/gsi/',
     ],
     'frame-src': ['https://challenges.cloudflare.com', 'https://accounts.google.com/gsi/'],

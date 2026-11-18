@@ -1,6 +1,6 @@
 import { Check } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { anchorPrice, formatPrice, packageMakes, sellingPlans, site, type SubscriptionPlan } from '#/config/site'
+import { anchorPrice, formatCreditPrice, formatPrice, packageMakes, sellingPlans, site, type SubscriptionPlan } from '#/config/site'
 import { useCheckout } from '#/lib/checkout'
 import { useContent } from '#/lib/i18n'
 import { ErrorText, Spinner } from './ui'
@@ -89,6 +89,7 @@ export function Pricing() {
                 ) : null}
               </p>
               <p className="mt-1 text-sm font-semibold">{p.credits(pack.credits)}</p>
+              <p className="text-xs text-muted" data-testid={`package-unit-price-${pack.id}`}>{p.perCredit(formatCreditPrice(pack.priceCents, pack.credits, pack.currency))}</p>
               {makes.length ? <p className="text-xs text-muted">{p.makes(makes)}</p> : null}
               <ul className="my-6 space-y-2.5 text-sm">
                 {p.bullets.map((bullet) => (
@@ -141,6 +142,7 @@ function PlanCard({ plan, button }: { plan: SubscriptionPlan; button: ReactNode 
         <p className="mt-1 text-xs text-muted">{p.yearlyMonthly(formatPrice(Math.round(plan.priceCents / 12), plan.currency))}</p>
       ) : null}
       <p className="mt-1 text-sm font-semibold">{p.monthlyCredits(plan.credits)}</p>
+      <p className="text-xs text-muted" data-testid={`plan-unit-price-${plan.id}`}>{p.perCredit(formatCreditPrice(plan.priceCents, plan.credits * (plan.interval === 'year' ? 12 : 1), plan.currency))}</p>
       <ul className="my-6 space-y-2.5 text-sm">
         {p.planBullets.map((bullet) => (
           <li key={bullet} className="flex items-start gap-2">

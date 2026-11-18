@@ -7,6 +7,7 @@ import { Footer } from '#/components/Footer'
 import { Nav } from '#/components/Nav'
 import { LocalLink } from '#/components/ui'
 import { site } from '#/config/site'
+import { clarityBootstrapScript } from '#/lib/clarity'
 import { ga4BootstrapScript } from '#/lib/consent'
 import { installErrorReporting, reportClientError } from '#/lib/error-report'
 import { htmlLang, loadContent, localeFromPathname, useContent } from '#/lib/i18n'
@@ -20,7 +21,9 @@ const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem('theme');if(!t)
 // head 里的脚本由框架带上 CSP nonce（见 src/server/csp.ts），自定义内联脚本都放这里，不要直接写 <script>
 function headScripts() {
   const scripts: Array<Record<string, unknown>> = [{ children: THEME_SCRIPT }]
-  const { ga4Id, cfBeaconToken, umamiWebsiteId } = site.analytics
+  const { clarityId, ga4Id, cfBeaconToken, umamiWebsiteId } = site.analytics
+  // Clarity 使用框架生成的 nonce，只在配置的正式域名上执行。
+  if (clarityId) scripts.push({ children: clarityBootstrapScript(clarityId, site.domain) })
   // GA4 要等访客在同意横幅点“接受”后才加载（见 lib/consent.ts）
   if (ga4Id) scripts.push({ children: ga4BootstrapScript(ga4Id) })
   if (cfBeaconToken) {

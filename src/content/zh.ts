@@ -18,7 +18,7 @@ export function zh(s: S): Content {
   const { uploadDays, outputDays } = s.retention
   const photoRetention = uploadDays > 0 ? `在上传 ${uploadDays} 天后自动删除` : '保留到你主动删除为止'
   const videoRetention = outputDays > 0 ? `在完成 ${outputDays} 天后自动删除` : '保留到你主动删除为止'
-  const { ga4Id, cfBeaconToken, umamiWebsiteId } = s.analytics
+  const { clarityId, ga4Id, cfBeaconToken, umamiWebsiteId } = s.analytics
   return {
     styles,
     meta: {
@@ -190,6 +190,8 @@ export function zh(s: S): Content {
       buying: '正在打开支付页…',
       paused: '支付即将开放',
       pausedNote: '我们正在和支付合作方完成开通，暂时还不能购买，请稍后再来。',
+      // 单积分价格按实际收费周期计算，四位小数为近似展示值。
+      perCredit: (price: string) => `约 ${price} / 积分`,
       credits: (n: number) => `${n} 积分`,
       makes: (items: { videos: number; seconds: number }[]) => `可做 ${items.map((i) => `${i.videos} 条 ${i.seconds} 秒`).join('或 ')}视频`,
       bullets: ['积分永不过期', '支持全部时长', '高清 MP4 下载，无水印', '生成失败自动退积分'],
@@ -583,7 +585,8 @@ export function zh(s: S): Content {
               s.referralRewardCredits > 0
                 ? '如果你打开了好友的邀请链接，我们会写入一个 Cookie（vt_ref，最多保留 30 天，注册后即删除），用于记录这次邀请。为防止滥用邀请奖励，邀请记录里保存的是你的 IP 地址加盐后的哈希值，不保存 IP 地址本身。邀请双方都看不到对方的账户信息。'
                 : '',
-              ga4Id || cfBeaconToken || umamiWebsiteId ? '' : '我们不使用第三方统计或广告 Cookie。',
+              clarityId || ga4Id || cfBeaconToken || umamiWebsiteId ? '' : '我们不使用第三方统计或广告 Cookie。',
+              clarityId ? '我们使用 Microsoft Clarity 的会话回放和热图了解页面使用情况。Microsoft 会处理交互与设备数据，并可能使用统计 Cookie。Clarity 不受本站 Google Analytics 同意横幅控制。' : '',
               cfBeaconToken ? '我们用 Cloudflare Web Analytics 统计页面浏览量，它不使用 Cookie，也不会跨网站追踪你。' : '',
               umamiWebsiteId
                 ? '我们用 Umami 统计访问量，它从我们自己的域名加载，不写入 Cookie，也不保存你的 IP 地址；IP 地址只用于判断你所在的国家和统计独立访客。'
@@ -603,7 +606,7 @@ export function zh(s: S): Content {
                 },
               ]
             : []),
-          { h: '服务提供方', p: [`我们只使用少量数据处理方：云托管、存储与邮件发送、仅为你的请求处理照片的 AI 渲染服务、内容安全分类服务，以及作为记录商户（Merchant of Record）的支付服务${ga4Id || cfBeaconToken || umamiWebsiteId ? '；另有上文所述的统计服务' : ''}。`] },
+          { h: '服务提供方', p: [`我们只使用少量数据处理方：云托管、存储与邮件发送、仅为你的请求处理照片的 AI 渲染服务、内容安全分类服务，以及作为记录商户（Merchant of Record）的支付服务${clarityId || ga4Id || cfBeaconToken || umamiWebsiteId ? '；另有上文所述的统计服务' : ''}。`] },
           { h: '你的权利', p: [`你可以随时下载或删除视频，也可以在“设置”中导出个人数据（JSON）或注销账号。其他隐私请求请发送邮件至 ${s.supportEmail}。`] },
         ],
       },

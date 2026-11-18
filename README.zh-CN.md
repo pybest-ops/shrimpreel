@@ -84,6 +84,7 @@ npm run dev -- --host 127.0.0.1      # http://127.0.0.1:3000
    积分包价格（`packages`）、订阅开关和套餐（`subscriptionsEnabled`、`plans`，开关设为 `false` 只卖积分包）、`durations`、`video.falModel` 按需在 `src/config/site.ts` 手改。套餐可加 `anchorPriceCents` 显示划线原价和折扣，只能填这个套餐真实卖过的价格（欧盟按降价前 30 天内最低价算），新站一般不填。价格页每个包显示“可做 N 条 X 秒或 M 条 Y 秒视频”（买得起的最长和最短时长），包数是 2 或 4 时网格按包数排列。可以加一个正好够最短时长的单条包（如 6 积分 $4.99）给只想做一条的人；余额不足时生成器的主按钮直接下单够用的最便宜的包，不用先跳价格页。
 3. **改文案**：`src/content/en.ts`、`src/content/zh.ts`。文案通过 `{keyword}` 等变量套用。每个词至少要重写 hero、whatIs、ideas、FAQ 和两篇文章，首页正文要自然覆盖长尾词。首页的痛点（`problem`）和对比（`withWithout`）区块按新趋势改，写不出真实内容就设为 `null`，不渲染。整站只换关键词会被 Google 判为 [scaled content abuse](https://developers.google.com/search/docs/essentials/spam-policies#scaled-content)。
    - **文章**：在 `site.ts` 的 `articles` 加一项（`key`、`slug`、发布和更新日期，可选 `related`），再在每种语言的 `articles` 里补同名 key，缺了 typecheck 会报错。可选的 `cover` 是 `public/` 下 1200×630 的封面，显示在 `/guides` 卡片和文章顶部，并用作该文章的 `og:image` 和 Article 结构化数据的 `image`；不填就没有卡片图，分享图用 `public/og.png`。封面用 `node scripts/article-cover.mjs public/guides/<slug>.jpg --tag Guide --title "短标题" public/demo/original.mp4@1 public/demo/ai1.mp4@2` 从站点自己的视频截帧（也可以用图片）生成，带标题、分类标签和品牌名；`--layout` 可选 `row`、`before-after`（照片 → 成片）、`vs`、`hero`、`grid`、`full`（一张横图铺满）。选项见脚本开头；用 Playwright 的 Chromium 渲染，截视频帧需要 ffmpeg。文章页地址是 `/<slug>`，自动进入 `/guides` 列表、sitemap 和其它文章的“相关文章”。`trend`、`howTo` 两篇被首页直接链接，不要删。建议每站至少一篇 1,200 词以上的支柱页，加 4–6 篇长尾页（教程、灵感、排错、对比）。
+     文章区块可选填 `media`：图片包含 `type`、`src`、`alt`、`caption`、`width`、`height`，视频额外填写 `poster`。可选的 `seoTitle` 缩短搜索标题但不改变 H1。原生控件不自动播放，视频按需加载；素材署名和实测限制写在文章里。
    - 文案按语言拆包，浏览器只下载当前语言（含法律页全文）。组件里照常用 `getContent(locale)`；只有在根路由之外、渲染之前要用文案时，才需要先 `await loadContent(locale)`。
    - 加一种语言：在 `site.ts` 的 `LOCALES` 和 `LOCALE_META` 里登记，新建 `src/content/<locale>.ts`（类型与 `en.ts` 一致），再在 `src/lib/i18n.ts` 的 `loaders` 里加一行动态 import。
 4. **换素材**：
@@ -252,6 +253,7 @@ SMOKE_BASE_URL=https://video-template-staging.<子域名>.workers.dev SMOKE_EXPE
   - 每日生成上限按 UTC 自然日统计创建的任务数（失败退款的也算），超出返回 429 `daily_limit`，不扣积分；并发提交由同一个 D1 batch 里的断言行兜底。0 = 不限。建议和服务商控制台的消费上限一起用。
   - 邀请奖励设为 0 即暂停邀请（隐藏卡片，链接不再绑定）。暂停期间付款的首单记为拒绝（`paused`），恢复后不会用之后的订单补发。`site.referralRewardCredits` 为 0 时这一项锁定，因为隐私政策按 `site.ts` 生成。
   - “测试连接”逐项探测 R2、KV、发信（给你发一封测试邮件）、支付（Dodo、Stripe：逐个套餐核对商品或 Price 的价格与 `site.ts` 是否一致，售价更低时报失败，因为这样的付款会被判金额不符而不入账；Stripe 还核对一次性/周期价格和扣款周期；Waffo：用不存在的订单号查单，验证签名和鉴权）、视频服务商（鉴权和余额，低于 5 美元提示）和图片审核（鉴权）。探测只读或自行清理，不建收银台、不提交任务，说明文字里的密钥值会被替换掉。
+- 单积分价格：定价卡片按收费周期总价除以覆盖的全部积分，显示四位小数近似值；年付使用全年发放积分，不使用已四舍五入的折合月价。
 - **订阅**：默认开启，开关是 `site.subscriptionsEnabled`。模板默认月付 $14.90、年付 $149，每月都发 60 积分；开关设为 `false` 就只卖积分包，定价页、条款、退款政策和 FAQ 里的订阅文案一起隐藏，已有订阅照常续费和发积分。开关、改套餐、支付商配置和排查见使用手册 [docs/subscriptions.md](docs/subscriptions.md)。
   - 每次扣款都是一张订单。续费订单号由支付商的付款 ID 派生，重复投递只建一次；续费金额按订阅时锁定的价格核对，对不上的转人工处理。
   - 订阅积分是当月结束作废的批次（流水 reason 为 `subscription`），生成时先于长期积分扣除。年付首付只发第一个月，其余由每 5 分钟的 Cron 按月补发，重复执行不会重发。
@@ -339,6 +341,7 @@ SMOKE_BASE_URL=https://video-template-staging.<子域名>.workers.dev SMOKE_EXPE
   - 配了站点密钥但没配 secret 时，两个表单返回 503，不会静默放行。
 - **统计与 Cookie**：在 `site.analytics` 配置，隐私政策的“Cookie 与统计”一节会按配置自动调整。
   - 推荐只填 `cfBeaconToken`（Cloudflare Web Analytics）：不写 Cookie，不需要同意横幅。
+  - Clarity（可选）：填写 `analytics.clarityId` 后在 `<head>` 加载官方脚本，只在正式域名及子域执行，水合和切页复用已有实例；空值关闭。CSP 按配置开放 Clarity 与 Bing 所需来源，隐私政策同步披露。它不接入 GA4 同意横幅，地区同意要求需在 Clarity 后台及同意管理方案中配置。
   - Umami（可选）：填 `analytics.umamiWebsiteId` 和 `vars.UMAMI_ORIGIN`（实例地址，如 `https://umami.example.com`）。页面加载本站的 `/s/script.js`，上报到本站的 `/s/api/send`，由 Worker（`src/server/umami.ts`）代理，网页源码和 JS 里看不到实例域名。不写 Cookie，不受同意横幅控制；代理不转发 Cookie，访客 IP（`CF-Connecting-IP`）只用于判断国家和统计独立访客。只有 `APP_ENV=production` 才上报；本地 dev、e2e、staging 拿到的是空脚本，什么都不转发。`/admin` 后台页面不上报。
   - 填了 `ga4Id` 才启用 GA4，同时出现同意横幅和页脚 “Cookie settings”。采用 Consent Mode v2 basic 模式：访客接受前不加载 gtag.js，事件只进 `dataLayer`；广告类同意项始终为 denied。拒绝或撤回时删除 `_ga`、`_ga_*`、`_gid`（当前主机和各级父域）。选择存在 `localStorage` 的 `consent.analytics`，逻辑见 `src/lib/consent.ts`。
   - 来源归因写第一方 Cookie `vt_attr`（90 天）。填了 `ga4Id` 时它和 GA4 一样等访客接受后才写入：接受时补记本次访问的来源，拒绝或撤回时删除；没写 Cookie 的访客，注册和订单记为 direct，访问统计照常计数。没填 `ga4Id` 时没有横幅，`vt_attr` 直接写入；按欧盟 ePrivacy 的严格解释这也需要事先同意，主要面向欧盟用户时应启用横幅。逻辑见 `src/lib/attribution.ts`。

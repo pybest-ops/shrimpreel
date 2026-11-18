@@ -6,7 +6,16 @@ type S = typeof Site
 type StyleId = S['styles'][number]['id']
 // seats：多人风格每个位置的名称和一句提示（键 = site.styles[].seats[].id）；seatsNote：位置格子下方的说明
 type StyleCopy = { name: string; tagline: string; seats?: Record<string, { name: string; hint: string }>; seatsNote?: string }
-type ArticleContent = { title: string; description: string; intro: string; sections: Array<{ h: string; p: string[] }> }
+// 文章实测媒体：图片说明和视频海报随正文配置，旧文章无需填写。
+export type ArticleMedia = {
+  src: string
+  alt: string
+  caption: string
+  width: number
+  height: number
+} & ({ type: 'image' } | { type: 'video'; poster: string })
+// seoTitle 只覆盖搜索标题，页面 H1 仍显示完整文章问题。
+export type ArticleContent = { title: string; seoTitle?: string; description: string; intro: string; sections: Array<{ h: string; p: string[]; media?: ArticleMedia[] }> }
 // FAQ 答案可附一条文章链接；锚文本用与文章标题不同的长尾词
 type FaqItem = { q: string; a: string; guide?: { article: ArticleKey; label: string } }
 // 首页可选转化区块，设为 null 就不渲染。痛点只写不用本站时的麻烦，不提产品；对比逐行写“自己做”和“用本站”，不承诺生成效果
@@ -21,7 +30,7 @@ export function en(s: S) {
   const { uploadDays, outputDays } = s.retention
   const photoRetention = uploadDays > 0 ? `deleted automatically ${uploadDays} days after upload` : 'kept until you delete them'
   const videoRetention = outputDays > 0 ? `kept for ${outputDays} days after they finish` : 'kept until you delete them'
-  const { ga4Id, cfBeaconToken, umamiWebsiteId } = s.analytics
+  const { clarityId, ga4Id, cfBeaconToken, umamiWebsiteId } = s.analytics
   // 每种风格的展示名和一句话介绍；site.styles 加风格时这里补一项（缺了 typecheck 报错），zh.ts 同
   const styles: Record<StyleId, StyleCopy> = {
     'neon-shuffle-v1': { name: k, tagline: 'The original routine, beat for beat.' },
@@ -211,6 +220,8 @@ export function en(s: S) {
       // 后台“暂停收款”打开时代替购买按钮和价格说明
       paused: 'Payments opening soon',
       pausedNote: 'We’re finishing setup with our payment partner, so purchases aren’t open yet. Check back soon.',
+      // 单积分价格按实际收费周期计算，四位小数为近似展示值。
+      perCredit: (price: string) => `About ${price} / credit`,
       credits: (n: number) => `${n} credits`,
       makes: (items: { videos: number; seconds: number }[]) =>
         `Makes ${items.map((i) => `${i.videos} × ${i.seconds}s`).join(' or ')} ${items.length === 1 && items[0]!.videos === 1 ? 'video' : 'videos'}`,
@@ -618,7 +629,8 @@ export function en(s: S) {
               s.referralRewardCredits > 0
                 ? 'If you open a friend’s invite link, we set a cookie (vt_ref, kept for up to 30 days and removed once you sign up) so the invite can be credited. To prevent abuse of invite rewards, we store a salted hash of your IP address with the invite, not the address itself. Neither of you can see the other’s account details.'
                 : '',
-              ga4Id || cfBeaconToken || umamiWebsiteId ? '' : 'We do not use third-party analytics or advertising cookies.',
+              clarityId || ga4Id || cfBeaconToken || umamiWebsiteId ? '' : 'We do not use third-party analytics or advertising cookies.',
+              clarityId ? 'We use Microsoft Clarity for session recordings and heatmaps to understand how people interact with our pages. Microsoft processes interaction and device data and may use analytics cookies. Clarity is not controlled by our Google Analytics cookie banner.' : '',
               cfBeaconToken ? 'We count page views with Cloudflare Web Analytics, which does not use cookies or track you across websites.' : '',
               umamiWebsiteId
                 ? 'We count visits with Umami, a cookie-free analytics tool loaded from our own domain. It does not set cookies or store your IP address; your IP address is only used to determine your country and to count unique visits.'
@@ -638,7 +650,7 @@ export function en(s: S) {
                 },
               ]
             : []),
-          { h: 'Service providers', p: [`We rely on a small number of processors: cloud hosting, storage and email delivery, an AI rendering provider that processes your photo only for your request, a content-safety classifier, a payment provider acting as merchant of record${ga4Id || cfBeaconToken || umamiWebsiteId ? ', and the analytics services described above' : ''}.`] },
+          { h: 'Service providers', p: [`We rely on a small number of processors: cloud hosting, storage and email delivery, an AI rendering provider that processes your photo only for your request, a content-safety classifier, a payment provider acting as merchant of record${clarityId || ga4Id || cfBeaconToken || umamiWebsiteId ? ', and the analytics services described above' : ''}.`] },
           { h: 'Your rights', p: [`You can download or delete your videos at any time. In Settings you can export a copy of your data as JSON or delete your account. For any other privacy request, email ${s.supportEmail}.`] },
         ],
       },

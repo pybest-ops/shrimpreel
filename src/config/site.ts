@@ -226,6 +226,8 @@ export const site = {
   // Umami 不写 Cookie，不受同意横幅控制。
   // 隐私政策的“Cookie 与统计”一节按这三项自动调整
   analytics: {
+    // Clarity 项目 ID；留空不加载，填写后只在正式域名及子域执行官方脚本。
+    clarityId: '',
     ga4Id: '',
     cfBeaconToken: '',
     umamiWebsiteId: '',
@@ -378,4 +380,9 @@ export function localePath(locale: Locale, path: string) {
 
 export function formatPrice(cents: number, currency: string) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(cents / 100)
+}
+
+// 单积分展示价：分母传入本次付款覆盖的全部积分，年付使用每月积分 × 12。
+export function formatCreditPrice(priceCents: number, credits: number, currency: string) {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: 4, maximumFractionDigits: 4 }).format(priceCents / 100 / credits)
 }

@@ -60,6 +60,7 @@
 - `packages`：积分包。`id` 要在 `*_PRODUCTS` 里有对应的商品，页面上的价格要和支付商后台一致。
 - `subscriptionsEnabled`、`plans`：订阅开关和套餐（`interval` 为 `month` 或 `year`，`credits` 是每月发放量）。套餐同样要在 `*_PRODUCTS` 里有商品；不卖订阅时把开关设为 `false`。用法见 [subscriptions.md](subscriptions.md)，入账规则见 [payments.md](payments.md) 的“订阅”。
 - `video`：模型、源视频帧率和每视频秒的成本，用于估算毛利。
+- `analytics.clarityId`：Microsoft Clarity 项目 ID，空值关闭。官方代码写入 `<head>`，仅正式域名及子域加载；同时按配置开放 CSP 来源。不受 GA4 同意横幅控制，地区同意管理需在 Clarity 与相应同意方案中配置。
 - `analytics.ga4Id`、`analytics.cfBeaconToken`、`analytics.umamiWebsiteId`：统计。`umamiWebsiteId` 配合 `UMAMI_ORIGIN` 使用，同域代理、不写 Cookie、不受横幅控制。只有填了 `ga4Id` 才会显示 Cookie 同意横幅，此时归因 Cookie `vt_attr` 也等访客同意后才写入。
 - `share.enabled`：成片公开分享页，默认开启。换脸、真人类站点风险高时设为 `false`，个人中心的分享按钮和 `/v/<id>` 页面都不出现。
 - `seo.googleVerification`、`seo.bingVerification`、`seo.indexNowKey`：站长验证和 IndexNow。用 `new-site.mjs` 派生新站时会被清空。
