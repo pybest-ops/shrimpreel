@@ -1,0 +1,32 @@
+README.md
+  s_dddc8be3d264e1::t_bcb44a002f03e0 256
+docs/env.md
+  s_dddc8be3d264e1::t_0b7a15da151e71 63
+ROADMAP.md
+  s_dddc8be3d264e1::t_bcb44a002f03e0 3-4
+  s_dddc8be3d264e1::t_7d3766c9b5a3a8 9-10
+README.zh-CN.md
+  s_dddc8be3d264e1::t_bcb44a002f03e0 256
+src/content/en.ts
+  s_dddc8be3d264e1::t_92ca8364b166b0 18
+  s_dddc8be3d264e1::t_68d4662dd41357 9-16
+src/routes/{-$locale}/$slug.tsx
+  s_dddc8be3d264e1::t_92ca8364b166b0 25,27
+  s_dddc8be3d264e1::t_68d4662dd41357 5,66,95-116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.11",
+  "base_commit_sha": "2d45b70f1bbf2f0fb01f988c40afbe77f1349e88",
+  "prompts": {},
+  "sessions": {
+    "s_dddc8be3d264e1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d922-2c32-74a1-a22d-4b37103dd0c8",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "muyun <muyun@tsign.cn>"
+    }
+  }
+}
