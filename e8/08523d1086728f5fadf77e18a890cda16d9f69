@@ -1,0 +1,31 @@
+src/content/en.ts
+  s_dddc8be3d264e1::t_92ca8364b166b0 21-28
+src/server/video/types.ts
+  s_196ab876eb3ce1::t_3b75e4008cd369 11
+docs/env.md
+  s_dddc8be3d264e1::t_0b7a15da151e71 64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.11",
+  "base_commit_sha": "e808523d1086728f5fadf77e18a890cda16d9f69",
+  "prompts": {},
+  "sessions": {
+    "s_196ab876eb3ce1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4b50068a-6859-451d-a4d3-30c9d9e8d4e3",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "muyun <muyun@tsign.cn>"
+    },
+    "s_dddc8be3d264e1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1d922-2c32-74a1-a22d-4b37103dd0c8",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "muyun <muyun@tsign.cn>"
+    }
+  }
+}
