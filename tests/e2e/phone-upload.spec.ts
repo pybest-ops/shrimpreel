@@ -56,12 +56,14 @@ test('访客草稿跨登录和付款保留：照片、风格、时长、授权�
     )
     .toBe(true)
 
-  // 本地没有 Google 配置：CTA 指向本地登录页，登录后回到首页
+  // 照片和授权都已就绪：CTA 点击后就地打开登录弹窗（不整页跳转），dev 登录后弹窗关闭、留在当前地址
   await page.getByTestId('generator-sign-up').click()
-  await expect(page).toHaveURL(/\/sign-in/)
-  await page.getByTestId('dev-email').fill(uniqueEmail('draft'))
-  await page.getByTestId('dev-login').click()
-  await expect(page).toHaveURL(`${ORIGIN}/`)
+  const modal = page.getByTestId('sign-in-modal')
+  await expect(modal).toBeVisible()
+  await modal.getByTestId('dev-email').fill(uniqueEmail('draft'))
+  await modal.getByTestId('dev-login').click()
+  await expect(modal).toHaveCount(0)
+  await expect(page).toHaveURL(`${ORIGIN}${SOLO_HOME}`)
 
   const generator = page.getByTestId('generator')
   await expect(page.getByTestId('generator-buy')).toBeVisible()
