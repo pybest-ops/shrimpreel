@@ -14,7 +14,7 @@ https://github.com/user-attachments/assets/895aab94-d0c9-474e-8d90-61a6c551e536
 
 <a href="https://christmasdanceai.com/?utm_source=github&utm_medium=referral&utm_campaign=shrimpreel"><img src="docs/media/showcase-christmas-dance-ai.jpg" width="600" alt="Christmas Dance AI：一张照片生成精灵舞或圣诞派对舞视频"></a>
 
-[Christmas Dance AI](https://christmasdanceai.com/?utm_source=github&utm_medium=referral&utm_campaign=shrimpreel)：上传一张照片，变身小精灵在圣诞老人的工坊里跳舞，或穿自己的衣服跳圣诞派对舞。两种风格、Google 登录、积分包和订阅，都来自本模板。
+[Christmas Dance AI](https://christmasdanceai.com/?utm_source=github&utm_medium=referral&utm_campaign=shrimpreel)：上传两张照片跳 [Deck the Halls 情侣或厨房双人舞](https://christmasdanceai.com/zh/christmas-couple-dance-ai)，或上传一张照片变身小精灵在圣诞老人工坊里跳舞、穿自己的衣服跳圣诞派对舞。四种带配乐混流的风格（两款 720p 单人舞、两款 480p 双人舞）、20 篇中英双语指南（含[同名站点区分说明](https://christmasdanceai.com/zh/christmas-dance-ai-vs-ai-christmas-dance)）、Google 登录、$4.99 起的积分包和订阅，都来自本模板。
 
 > 状态：本地全流程可用（单元测试 + Playwright e2e），上面的站点已在生产环境运行。模板本身不部署。哪些已用真实服务验证、哪些还没有，见 [ROADMAP.md](ROADMAP.md)。
 
@@ -26,13 +26,16 @@ https://github.com/user-attachments/assets/895aab94-d0c9-474e-8d90-61a6c551e536
   - 用户与积分：Google 登录（含 One Tap）和邮箱验证码登录、积分包、月付和年付订阅、积分流水、个人中心（视频/账单/设置/兑换码/邀请链接/注销/导出我的数据）；账单显示实付与退款，订单和积分流水可分页加载，每笔订单有可打印的详情页（税务发票由支付商出具）
   - 订单与生成：订单与部分/全额退款回收、生成任务队列（含死信队列）与失败退积分
   - 增长与运营：来源归因（UTM 与广告点击 ID，首次和最近触达；ChatGPT 等 AI 助手单独归类，后台可按来源看落地页）、访问 → 注册 → 下单 → 支付 → 生成漏斗、GA4 事件（带同意横幅）、成片公开分享页（用户自己开启，带链接预览图）
+    - 先体验后登录：生成器把选好的照片、风格和时长存在浏览器里（IndexedDB，24 小时），登录、付款回来后还在；未登录时提示“照片会保留”和够当前时长的最便宜积分包价格。提交生成或退出登录时清除草稿
+    - 手机扫码传图：桌面端生成器显示二维码，手机打开 `/phone-upload`（token 只在 URL fragment 里）选图，桌面几秒内收到。照片经 R2 的 `handoff/` 中转（链接 10 分钟有效、一码一张、cron 一小时后清理），桌面照常上传时再审核
   - 站内反馈：公开页面右下角的“反馈”浮窗（`FeedbackWidget`，取代原来的客服圆钮）选类型（建议、Bug、好评、其他）写一段话提交，邮箱选填；`POST /api/feedback` 按 IP 限流、配了 Turnstile 时要过人机校验，和联系表单共用 `contact_messages` 表、后台“留言”页和管理员提醒（topic 为 `feedback_<类型>`，所在页面追加在正文末尾），不需要新迁移。
   - 管理后台：概览（含服务商成本与毛利）、用户、订单、生成、举报下架、留言与反馈、支付事件、邮件、审计、经营报表与订单 CSV、兑换码、邀请排行、运营设置与测试连接
     - 用户：按状态、角色、是否付费筛选，按注册时间、最近登录、积分排序；详情页有累计付款、生成统计、订单、积分批次与流水和针对该用户的管理员操作（补发可设有效期）
     - 订单：按订单号、邮箱、支付商流水号搜索；详情页把支付回调、积分变动、管理员操作和邮件合成一条时间线，可在详情页退款、查单或补单
     - 生成：按任务 ID、邮箱、服务商请求 ID 搜索
-  - 交易邮件：积分到账、成片完成、生成失败退积分、举报回执（仅登录用户）与处理结果；管理员收新举报、超时提醒和新留言（Cloudflare Email Service，发件箱去重与重试）
-  - 合规与内容安全：成片 AI 标识；照片 7 天、成片 30 天自动清理；举报下架（48 小时队列，同一张原图的全部成片一并删除并拉黑）；上传图片审核；联系和举报表单的 Turnstile 人机验证
+  - 交易邮件：积分到账、成片完成、生成失败退积分、举报回执（仅登录用户）与处理结果；管理员收新举报、超时提醒、新留言和支付争议（Cloudflare Email Service，发件箱去重与重试）
+  - 合规与内容安全：成片 AI 标识，外加可选（默认关闭）的机器可读 XMP 元数据和免费的 `/verify` 验证页；照片 7 天、成片 30 天自动清理；举报下架（48 小时队列，同一张原图的全部成片一并删除并拉黑）；上传图片审核和可选的成片逐帧审核；服务端记录同意勾选；联系和举报表单的 Turnstile 人机验证
+  - 支付争议：拒付时回收积分并通知管理员，胜诉补回，Stripe 欺诈预警自动退款
   - 运维与安全：后台免部署切换维护模式、暂停收款、新订单的收款渠道、全站公告和每日生成上限；健康检查告警邮件、付款即时通知（Telegram、飞书、Discord 等）、D1 每日备份到 R2、前端错误上报到 Workers 日志、CSP（Report-Only，每次请求一个 nonce）与 Permissions-Policy
   - 内容与 SEO：one-page 首页（How it works / What is 区块，可选的痛点和“自己拍 vs 用本站”对比区块）、可扩展的文章集合（`/guides` 列表页、相关文章）、法律页、联系表单；SSR 输出完整的 canonical、hreflang、JSON-LD 和 sitemap；文案按语言拆包；`npm run seo:check` 检查全站
 
@@ -43,7 +46,7 @@ https://github.com/user-attachments/assets/895aab94-d0c9-474e-8d90-61a6c551e536
 ```bash
 npm install
 cp .dev.vars.example .dev.vars       # 至少填 SESSION_SECRET
-npm run seed:local                   # 应用 D1 迁移 + 把 seed/templates/ 的 mp4 和 jpg 上传到本地 R2
+npm run seed:local                   # 应用 D1 迁移 + 把 seed/templates/ 的 mp4、jpg 和 m4a 上传到本地 R2
 npm run dev -- --host 127.0.0.1      # http://127.0.0.1:3000
 ```
 
@@ -82,16 +85,17 @@ npm run dev -- --host 127.0.0.1      # http://127.0.0.1:3000
    - 删除 `wrangler.staging.jsonc`（模板自身的预发配置）。
 
    积分包价格（`packages`）、订阅开关和套餐（`subscriptionsEnabled`、`plans`，开关设为 `false` 只卖积分包）、`durations`、`video.falModel` 按需在 `src/config/site.ts` 手改。套餐可加 `anchorPriceCents` 显示划线原价和折扣，只能填这个套餐真实卖过的价格（欧盟按降价前 30 天内最低价算），新站一般不填。价格页每个包显示“可做 N 条 X 秒或 M 条 Y 秒视频”（买得起的最长和最短时长），包数是 2 或 4 时网格按包数排列。可以加一个正好够最短时长的单条包（如 6 积分 $4.99）给只想做一条的人；余额不足时生成器的主按钮直接下单够用的最便宜的包，不用先跳价格页。
-3. **改文案**：`src/content/en.ts`、`src/content/zh.ts`。文案通过 `{keyword}` 等变量套用。每个词至少要重写 hero、whatIs、ideas、FAQ 和两篇文章，首页正文要自然覆盖长尾词。首页的痛点（`problem`）和对比（`withWithout`）区块按新趋势改，写不出真实内容就设为 `null`，不渲染。整站只换关键词会被 Google 判为 [scaled content abuse](https://developers.google.com/search/docs/essentials/spam-policies#scaled-content)。
-   - **文章**：在 `site.ts` 的 `articles` 加一项（`key`、`slug`、发布和更新日期，可选 `related`），再在每种语言的 `articles` 里补同名 key，缺了 typecheck 会报错。可选的 `cover` 是 `public/` 下 1200×630 的封面，显示在 `/guides` 卡片和文章顶部，并用作该文章的 `og:image` 和 Article 结构化数据的 `image`；不填就没有卡片图，分享图用 `public/og.png`。封面用 `node scripts/article-cover.mjs public/guides/<slug>.jpg --tag Guide --title "短标题" public/demo/original.mp4@1 public/demo/ai1.mp4@2` 从站点自己的视频截帧（也可以用图片）生成，带标题、分类标签和品牌名；`--layout` 可选 `row`、`before-after`（照片 → 成片）、`vs`、`hero`、`grid`、`full`（一张横图铺满）。选项见脚本开头；用 Playwright 的 Chromium 渲染，截视频帧需要 ffmpeg。文章页地址是 `/<slug>`，自动进入 `/guides` 列表、sitemap 和其它文章的“相关文章”。`trend`、`howTo` 两篇被首页直接链接，不要删。建议每站至少一篇 1,200 词以上的支柱页，加 4–6 篇长尾页（教程、灵感、排错、对比）。
+3. **改文案**：`src/content/en.ts`、`src/content/zh.ts`。文案通过 `{keyword}` 等变量套用。每个词至少要重写 hero、whatIs、ideas、FAQ 和两篇文章，首页正文要自然覆盖长尾词。首页的痛点（`problem`）和对比（`withWithout`）区块按新趋势改，写不出真实内容就设为 `null`，不渲染。规格表（`specs`）一行一个事实（上传要求、时长、格式、价格等），AI 回答常照搬这类规格，值要和 `site` 配置一致。整站只换关键词会被 Google 判为 [scaled content abuse](https://developers.google.com/search/docs/essentials/spam-policies#scaled-content)。
+   - **文章**：在 `site.ts` 的 `articles` 加一项（`key`、`slug`、发布和更新日期，可选 `related`），再在每种语言的 `articles` 里补同名 key，缺了 typecheck 会报错。可选的 `cover` 是 `public/` 下 1200×630 的封面，显示在 `/guides` 卡片和文章顶部，并用作该文章的 `og:image` 和 Article 结构化数据的 `image`；不填就没有卡片图，分享图用 `public/og.png`。封面用 `node scripts/article-cover.mjs public/guides/<slug>.jpg --tag Guide --title "短标题" public/demo/original.mp4@1 public/demo/ai1.mp4@2` 从站点自己的视频截帧（也可以用图片）生成，带标题、分类标签和品牌名；`--layout` 可选 `row`、`before-after`（照片 → 成片）、`vs`、`hero`、`grid`、`full`（一张横图铺满）。选项见脚本开头；用 Playwright 的 Chromium 渲染，截视频帧需要 ffmpeg。文章页地址是 `/<slug>`，自动进入 `/guides` 列表、sitemap 和其它文章的“相关文章”。可选的 `style`（填 `styles[].id`）会在导语后显示该风格的原片和 AI 样片，文末按钮跳到 `/?style=<id>#create` 并预选风格，id 不存在就忽略。可选的 `faq`（各语言 content 里该文章的 `[{ q, a }]`）会在正文后渲染折叠问答并输出 FAQPage 结构化数据。段落还可以带可选的 `table`（`{ head, rows }`），渲染在该段文字之后，第一列作行标题，适合对比表和规格表。`trend`、`howTo` 两篇被首页直接链接，不要删。建议每站至少一篇 1,200 词以上的支柱页，加 4–6 篇长尾页（教程、灵感、排错、对比）。
      文章区块可选填 `media`：图片包含 `type`、`src`、`alt`、`caption`、`width`、`height`，视频额外填写 `poster`。可选的 `seoTitle` 缩短搜索标题但不改变 H1。原生控件不自动播放，视频按需加载；素材署名和实测限制写在文章里。
    - 文案按语言拆包，浏览器只下载当前语言（含法律页全文）。组件里照常用 `getContent(locale)`；只有在根路由之外、渲染之前要用文案时，才需要先 `await loadContent(locale)`。
    - 加一种语言：在 `site.ts` 的 `LOCALES` 和 `LOCALE_META` 里登记，新建 `src/content/<locale>.ts`（类型与 `en.ts` 一致），再在 `src/lib/i18n.ts` 的 `loaders` 里加一行动态 import。
 4. **换素材**：
    - `seed/templates/<风格 id>-<秒数>s.mp4`：生成用的源视频，每种风格的每个时长档位一段（`site.styles[].sources`），部署后上传到 R2 的 `templates/`。
+   - `seed/templates/<风格 id>-<秒数>s.m4a`（可选）：背景音乐，每种风格的每个时长档位一段 AAC（`site.styles[].music`，键 = `durations[].id`，默认 `null`）。配了之后，成片存进 R2 后服务端用纯 JS（`mediabunny`，视频流逐包拷贝、不重编码）把成片原有音轨换成这段音乐，发生在审核和 XMP 标记之前。每段时长应等于档位且结尾自带淡出，超出视频时长的音频会被丢掉。和源视频一样上传，`--content-type audio/mp4`。任何一步失败（R2 里缺文件、成片超过 48 MB、MP4 读不了）都保持服务商出的原样，任务照常成功。音乐必须拥有商用授权（例如自己生成、条款允许商用的 AI 音乐），不能用别人的歌。站点文案若写着视频无声，要同步改。
    - `public/demo/*`：首页展示视频和海报。必须是自有或已获授权的素材，在 `site.styles[].examples.*.credit` 写明来源。
    - `public/og.png`、`public/favicon.svg`。
-   - **多种舞蹈风格**（可选）：在 `site.styles` 里加项。每项有 `id`（写入 `generations.template_id`，发布后不要改）、`sources`（每个 `durations[].id` 一个文件）、`prompt`（`null` = 用 `video.yir.prompt` / `video.nanoapi.prompt`）、`scene`（yir 两步走的 `{ frame, prompt }`，`null` = 单步）和 `examples`（`original`、`aiVersions`、`madeWith`）。第一项是默认风格。同时在 `en.ts`、`zh.ts` 补 `styles['<id>'] = { name, tagline }`。只有一种风格时界面没有风格选择；多于一种时生成器出现选择（`/?style=<id>` 预选），首页 hero 出现风格标签，“Made with”每种风格一行。
+   - **多种舞蹈风格**（可选）：在 `site.styles` 里加项。每项有 `id`（写入 `generations.template_id`，发布后不要改）、`sources`（每个 `durations[].id` 一个文件）、`prompt`（`null` = 用 `video.yir.prompt` / `video.nanoapi.prompt`）、`scene`（yir 两步走的 `{ frame, prompt }`，`null` = 单步）和 `examples`（`original`、`aiVersions`、`madeWith`）。每项还可选：`photos: 2`（双人风格：第 1 张照片是源视频左边的人，第 2 张是右边的人，生成器显示两个上传区）、`provider`（`'fal' | 'yir' | 'nanoapi'`，这个风格固定走某个服务商，覆盖 `VIDEO_PROVIDER`，对应密钥也要配）和 `durations`（`[{ id, seconds, credits, isFull? }]`，这个风格自己的时长档位，替换 `site.durations`；id 全站不能重复，`sources`、`music` 的键用它们）。`photos: 2` 需要支持多图的服务商，目前只有 `nanoapi`，fal、yir 收到两张会让任务失败。第一项是默认风格（请求不带 `styleId` 时用它）。想主推另一个风格（比如新出的趋势风格）时把它的 id 写进 `site.featuredStyleId`：首页 hero 标签和生成器默认选中它，并排在最前面。同时在 `en.ts`、`zh.ts` 补 `styles['<id>'] = { name, tagline }`。只有一种风格时界面没有风格选择；多于一种时生成器出现选择（`/?style=<id>` 预选），首页 hero 出现风格标签，“Made with”每种风格一行。
    - **多人位置**（可选，只有 `VIDEO_PROVIDER=haomao` 支持）：风格配 `seats: [{ id, target }, …]`，第一项是必填的主角，其余可选，每个位置一张照片，价格不变。`target` 用英文描述源视频里要被替换的那个人（外貌、服装、位置），prompt 按用户实际填了的位置拼成“Replace <target> in video 1 with the person in image N”，主角是 image 1，可选位置按顺序接在后面，没填的位置保留源视频里的人；此时风格的 `prompt` 不再使用。在 `en.ts`、`zh.ts` 的 `styles['<id>']` 里补 `seats: { <seat id>: { name, hint } }` 和可选的 `seatsNote`。主角照片仍存在 `generations.upload_id`，可选位置存在 `generation_seats`（迁移 0016）；照片清理、举报下架（同一条成片的所有照片一起下架、拉黑）和数据导出都覆盖可选位置。生成器显示一个主角大格加若干可选格；接口拒绝未知位置（`invalid_seat`）、同一张照片用在两个位置（`duplicate_photo`，按 sha256）和不支持多图的服务商（`seats_unsupported`）。源视频里最好不要有真实人物：先用 Seedance 把源视频里的人都换成虚构的人做一条“干净底片”，再拿它当源视频。
    - `node scripts/generate-placeholder-media.mjs`（需要 ffmpeg）按 `site.styles[].sources` 的文件名和品牌名重新生成原创占位素材。之后删掉 `seed/templates/` 里旧风格的文件。
 5. **改 `wrangler.jsonc` 的 `vars`**：`SITE_URL`、`APP_ENV=production`、`PAYMENT_PROVIDER`、`VIDEO_PROVIDER`、`MODERATION_PROVIDER`、`TURNSTILE_SITE_KEY`、`ADMIN_EMAILS`、`EMAIL_FROM`、`*_PRODUCTS`、`GOOGLE_CLIENT_ID`；创建资源后把 D1/KV id 写回（见下文）。
@@ -136,6 +140,7 @@ npx wrangler queues create <name>-jobs
 npx wrangler queues create <name>-jobs-dlq
 npm run db:migrate:remote                      # 0003 保留期、举报下架和图片拉黑；0004 邮件发件箱
 npx wrangler r2 object put <name>-media/templates/<file>.mp4 --file seed/templates/<file>.mp4 --content-type video/mp4 --remote
+npx wrangler r2 object put <name>-media/templates/<file>.m4a --file seed/templates/<file>.m4a --content-type audio/mp4 --remote   # 背景音乐（如有）
 ```
 
 - `ratelimits[].namespace_id` 在同一账号内要唯一，多个站点不要共用同一组数字。
@@ -153,7 +158,7 @@ npx wrangler r2 object put <name>-media/templates/<file>.mp4 --file seed/templat
 - 同时配好 R2 生命周期规则，见下文“合规与内容安全”。
 - 发信域名要在 Email Service 完成 Onboard，见下文“交易邮件”。
 - 部署前体检：`npm run doctor`，`npm run deploy` 会先跑它，有错误就停下。
-  - 检查 `APP_ENV`、`SITE_URL` 与 `site.domain` 是否一致、是否误用 mock、所选支付/视频/审核服务商需要的密钥、`*_PRODUCTS` 是否覆盖全部积分包、绑定和资源 id 是否还是占位值、Cron 与死信队列、站点文件里没填完的 `TODO(site)`，以及远端 D1 是否还有未应用的 migration。
+  - 检查 `APP_ENV`、`SITE_URL` 与 `site.domain` 是否一致、是否误用 mock、所选支付/视频/审核服务商需要的密钥、`*_PRODUCTS` 是否覆盖全部积分包、绑定和资源 id 是否还是占位值、Cron 与死信队列、站点文件里没填完的 `TODO(site)`、工作区未提交改动（`production` 下直接报错，本地调试可加 `--allow-dirty` 跳过），以及远端 D1 是否还有未应用的 migration。
   - 密钥只用 `wrangler secret list` 核对名字，不读取值。需要已登录 wrangler；首次部署时 Worker 还不存在，先写密钥（`wrangler secret put` 或 `sync-secrets --apply --overwrite`，都会创建 Worker）。`--offline` 跳过所有远端查询，`-c wrangler.staging.jsonc` 检查预发配置。
   - 后台概览的“上线配置检查”卡片按运行时 env 跑同一套规则（规则在 `src/server/config-health.ts`），还会检查 `SESSION_SECRET` 强度；只显示问题，不显示任何值。
 - 部署：`npm run deploy`。在 Cloudflare 控制台给 Worker 绑定自定义域名，`SITE_URL` 和 `site.domain` 要与之一致（canonical、sitemap 和 CSRF 同源校验都依赖它）。
@@ -188,6 +193,7 @@ npx wrangler r2 bucket lifecycle add video-template-staging-media expire-uploads
 npx wrangler r2 bucket lifecycle add video-template-staging-media expire-outputs outputs/ --expire-days 31
 npx wrangler d1 migrations apply DB --remote -c wrangler.staging.jsonc
 npx wrangler r2 object put video-template-staging-media/templates/<file>.mp4 --file seed/templates/<file>.mp4 --content-type video/mp4 --remote
+npx wrangler r2 object put video-template-staging-media/templates/<file>.m4a --file seed/templates/<file>.m4a --content-type audio/mp4 --remote   # 背景音乐（如有）
 npm run doctor -- -c wrangler.staging.jsonc                 # 部署前体检
 npx vite build --mode staging && npx wrangler deploy         # deploy 读取构建产物里的 staging 配置
 node scripts/sync-secrets.mjs -c wrangler.staging.jsonc --file .dev.vars.staging --apply   # 或逐个 wrangler secret put <NAME> -c wrangler.staging.jsonc
@@ -231,7 +237,8 @@ SMOKE_BASE_URL=https://video-template-staging.<子域名>.workers.dev SMOKE_EXPE
 ## 关键设计
 
 - **主题**：`site.theme` 选整站外观，写在 `<html data-skin>` 上，访客仍可切换亮色 / 暗色。`classic`（默认）：暖白纸张、品红强调、衬线标题、胶囊按钮；`acid`：锌黑 / 奶白、黄绿强调、无衬线粗标题、小圆角按钮。颜色、字体、圆角都是 `src/styles.css` 里的 CSS 变量，新增主题时在 `src/lib/theme.ts` 登记并写亮色、暗色两组变量（`tests/unit/theme.test.ts` 核对）。
-  - 统计同意卡片（只在填了 `ga4Id` 时出现）在右下角，不挡正文；“接受”和“拒绝”同样大小，× 只收起本次，不记录选择。
+  - 统计同意卡片（填了 `ga4Id` 或 `clarityId` 时启用，只对欧洲经济区、英国、瑞士和无法判断国家的访客自动弹出）在右下角，不挡正文；“接受”和“拒绝”同样大小，× 只收起本次，不记录选择。
+  - `/llms.txt` 由 `site` 和英文文案生成：关键事实（输入、风格、时长与价格、积分包和套餐、风格有配乐时写配乐、无可见水印、失败退款、保存期限、登录方式）、页面、指南和条款。配置推不出来的事实，例如收宠物照片、和名字相近的站不是一家，写在 `site.seo.llmsFacts`。
   - 页脚“问问 AI”：链接 `/llms.txt`，并列出 ChatGPT、Claude、Perplexity、Gemini（Google AI Mode）、Grok 按钮，带一段预填提问（`footer.askAiPrompt`，含首页和 `llms.txt` 地址）在新标签打开，链接 `nofollow`。
 - **积分**：每笔变动都写流水，`idempotency_key` 唯一（`order:<id>`、`order_refund:<id>`、`generation:<id>` 等），与批次、余额更新在同一个 D1 batch 里，重复入账会整体回滚。
   - 批次：每次入账是一个批次（`credit_grants`），可以带到期时间。买的积分永不过期；注册赠送按运营设置里的有效期到期（默认 `site.signupBonusValidDays`，0 = 永不过期）；后台补发时可填有效期（1–3650 天）。
@@ -261,6 +268,7 @@ SMOKE_BASE_URL=https://video-template-staging.<子域名>.workers.dev SMOKE_EXPE
   - 账单页有订阅卡片：下次续费日、到期取消与撤销、扣款失败提示、支付商客户门户。Waffo 只能在客户门户里撤销取消，门户需要 `WAFFO_STORE_ID`。
   - 退款只回收这张订单发过的订阅积分，之后不再补发年付积分；退款不会取消订阅。不支持换套餐、试用期和暂停。规则和 Dodo、Waffo 的差异见 [docs/payments.md](docs/payments.md) 的“订阅”。
   - test 模式实测（webhook 模式）：Waffo 月付首付、订阅激活、当月积分、客户门户、取消续费全部通过；Dodo 首付、激活、积分和门户地址通过，取消续费和撤销要等 API 密钥补上 Subscriptions 写入后再验证。续费和扣款失败 test 模式触发不了，由单元测试和 mock e2e 覆盖。Waffo 付款事件不带周期且周期只到日期，状态事件到达后会校正周期，当期积分的到期时间跟着对齐。
+- **争议与拒付**：Stripe 的 `charge.dispute.*` 和 Dodo 的 `dispute.*` 事件和付款一样经 `processPaymentEvent` 落库。争议开启时回收这张订单剩余的积分（幂等键 `dispute:<争议号>`）并邮件通知管理员；胜诉或争议撤销时补回；败诉时订单记为已退款，不二次回收。Stripe 欺诈预警（early fraud warning）由 `site.fraudWarningAutoRefund` 控制，**默认开启**：收到可处理预警时同步停掉账户上活跃订阅的期末续费（并尽力向支付商取消），经 Stripe 全额退掉剩余金额后立即在本地回收剩余积分；设为 `false` 时只通知管理员由人工审核后退款。后台订单显示争议状态。Waffo 没有争议 webhook，要手动记账。细节见 [docs/payments.md](docs/payments.md) 的“争议与拒付”。
 - **支付事件**：`payment_events (provider, event_id)` 唯一。重放、并发重试、退款后迟到的 paid 都只生效一次。退款按 `MIN(余额, 包内积分)` 回收，流水记录实际扣除量。
   - paid 事件入账前和订单核对：商品要一致（Dodo 商品 ID、Stripe Price ID、Waffo `productMetadata.packageId`），同币种时含税实收不得低于标价；币种不同（Dodo Adaptive Currency）或用了折扣码时不核对金额。不一致的不入账，记为 `mismatch`；找不到订单的 paid 事件记为 `orphan`（`metadata.site` 标明是共用商户号的其他站点的事件直接忽略）。两者都返回 200，并触发“付款待核对”告警：核实后在后台补单，或到支付商后台退款（退款回调到达后订单结案为已退款，不动积分）。
   - 退款事件先于付款事件到达（付款回调还在重试）时记为失败并返回 5xx，等付款入账后由支付商重试。
@@ -278,7 +286,7 @@ SMOKE_BASE_URL=https://video-template-staging.<子域名>.workers.dev SMOKE_EXPE
   - 后台概览显示近 30 天的服务商成本、消耗积分折算的收入和估算毛利；生成列表逐条显示成本和毛利。每积分实收 = USD 已支付订单的净实收 ÷ 未回收的积分。实际扣费以服务商账单为准。
 - **视频服务商**：`VIDEO_PROVIDER` 可选 `fal`（默认）、`yir`、`nanoapi`、`haomao` 或 `mock`。[yir.ai](https://yir.ai/?ref=qianshuixia) 是图片视频 API 网关，启用方法：`VIDEO_PROVIDER=yir`，secret 写 `YIR_API_KEY`，模型和提示词在 `site.video.yir` 里改（`src/server/video/yir.ts`）。
   - yir 没有模板所用的角色替换模型（`wan/v2.2-14b/animate/replace`）。接入用的是 Kling 2.6 Motion Control（reference 模式：照片 + 模板源视频），模板只交付接入代码，没有用真实 key 实测（提交、状态查询和错误映射由单元测试覆盖），效果和单价要自己验证，`costCentsPerSecond: 7` 只是估算，上线前按 [yir 模型页](https://yir.ai/models) 的报价改。
-  - 两步走（可选，按风格配 `site.styles[].scene = { frame, prompt }`，默认 `null`；图片模型等共用参数在 `site.video.yir.sceneImage`）：Motion Control 的成片背景取自用户照片。想保留源视频的场景，就先用图片模型（如 `google/nano-banana-2`）把照片里的人合成进源视频首帧，再拿合成图做动作参考。首帧图放在 `seed/templates/`，和源视频一样上传到 R2 的 `templates/`（`--content-type image/jpeg`）。合成图会传进 yir Files API，第二步用固定的 `file_id` 引用，重新提交时请求体不变。每单多一张图的费用（`sceneImage.costCents`），用户照片也会经过图片模型的渠道。
+  - 两步走（可选，按风格配 `site.styles[].scene = { frame, prompt }`，默认 `null`；图片模型等共用参数在 `site.video.yir.sceneImage`）：Motion Control 的成片背景取自用户照片。想保留源视频的场景，就先用图片模型（如 `google/nano-banana-2`）把照片里的人合成进源视频首帧，再拿合成图做动作参考。首帧图放在 `seed/templates/`，和源视频一样上传到 R2 的 `templates/`（`--content-type image/jpeg`）。背景音乐（`site.styles[].music`，`.m4a`）同样上传，`--content-type audio/mp4`。合成图会传进 yir Files API，第二步用固定的 `file_id` 引用，重新提交时请求体不变。每单多一张图的费用（`sceneImage.costCents`），用户照片也会经过图片模型的渠道。
   - 提交时用任务 id 作 `Idempotency-Key`：队列重投或 Worker 中断后重新提交，拿回的是同一个 yir 任务，不会重复计费。yir 按请求体识别同一请求，所以照片签名地址按任务创建时间生成，有效期 2 小时，重新提交时地址不变。
   - 没有用 `max_cost` 给单个任务封顶：yir 对用 URL 引用的素材拒绝 `max_cost`。Motion Control 按参考视频秒数计费，而模板源视频的时长是固定的，单价本身就有上限。整体花费建议在 yir Console 给这个 API Key 设月度额度，超出后提交返回 `YIR_SPEND_LIMIT_EXCEEDED`。
   - yir 除了官方渠道，还可能把任务路由到第三方渠道，用户照片会发给它们。`site.video.yir.routingOnly` 默认 `null`，按 API Key 的 Routing Profile 选渠道，失败时可以换渠道。填渠道 ID（如 `['official']`）后只在这些渠道里选，它们都失败时任务失败。不管选哪种，隐私政策都要列出实际经过的渠道。
@@ -287,7 +295,7 @@ SMOKE_BASE_URL=https://video-template-staging.<子域名>.workers.dev SMOKE_EXPE
   - 利益披露：本 README 里的 yir 链接是作者的推荐链接。按 yir 条款，被推荐账号注册后 6 个月内的消费，作者能拿到 yir 毛利的一部分。不想走推荐链接可以直接访问 [yir.ai](https://yir.ai)。fal 的链接不带推荐。
   - [NanoAPI](https://nanoapi.ai)（`VIDEO_PROVIDER=nanoapi`，secret `NANOAPI_API_KEY`，配置在 `site.video.nanoapi`，代码在 `src/server/video/nanoapi.ts`）用 `genjutsu-1.0` 模型处理照片 + 模板源视频。`mode: 'motion_control'` 让照片里的人做源视频的动作；`'replace_object'` 把源视频里的对象换成照片里的，`prompt` 要写清换哪个。计费秒数是源视频时长（motion_control 四舍五入且至少 4 秒，replace_object 向上取整）乘以对应分辨率的单价（480p $0.117/s、720p $0.273/s、1080p $0.78/s，见[价格](https://nanoapi.ai/docs/genjutsu)）。2026-10-25 用真实 key 实测，480p，源视频 6 秒，每段出片要 4～7 分钟。`motion_control` 保留源视频的场景、动作和照片里的人脸，但衣服也是照片里的；`replace_object` 保留源视频的服装和场景，但人脸会往原舞者的样子靠。要让用户换上戏服，先用图片模型给照片换装，再跑 `motion_control`，模板的 NanoAPI 接入没有做这一步。`replace_object` 把 6.04 秒的视频按 7 秒计费，所以源视频要剪成整秒。
   - NanoAPI 会自己下载照片和源视频：用浏览器 User-Agent，读视频时发 Range 请求。源视频读不了时任务以 `internal_error` 失败（全额退款），不会报 `invalid_media`。实测里，不支持 Range 的服务器和不带扩展名的签名地址都出现过这种情况。模板的 `/media/*` 路由支持 Range，地址以 `.mp4` 结尾。不要在 `/media/*` 前面加人机验证，包括 Bot Fight Mode、Under Attack 模式和 WAF 质询。本地测试不要用 Pinggy 免费隧道，它会给浏览器返回一个提示页。
-  - NanoAPI 创建任务没有幂等键，队列重投或 Worker 中断后重新提交会重复扣费。所以创建前先列出最近 3 小时的任务，照片地址和源视频地址都对得上就直接沿用那个任务（照片签名地址按任务创建时间生成，同一任务每次相同，不同任务一定不同）。列表请求失败时提交也失败（可重试的错误会重投），不会在查不了的情况下盲目创建。
+  - NanoAPI 创建任务没有幂等键，为了在队列重投或 Worker 中断重试时不重复扣费，仅在重试提交（`attempts > 0`）时先列出最近 3 小时的任务，照片地址和源视频地址都对得上就直接沿用那个任务（照片签名地址按任务创建时间生成，同一任务每次相同，不同任务一定不同）；首次提交直接创建。重试时列表请求失败则提交一并失败（可重试错误会重投），不在查不了的情况下盲目创建。
   - 没配密钥、密钥失效、余额用完或账户被停用时，任务失败并退积分，同时立即触发“视频服务商账户”告警。NanoAPI 的 Key 没有月度额度，余额要自己在 NanoAPI 控制台盯着。结果每 30 秒轮询一次（文档要求间隔不少于 15 秒）。
   - haomaotoken（`VIDEO_PROVIDER=haomao`，secret `HAOMAO_API_KEY`，配置在 `site.video.haomao`，代码在 `src/server/video/haomao.ts`）是火山引擎方舟的中转，用 Seedance 2.0（默认 `seedance-2.0-fast`）做参考生视频：照片是 image 1，模板源视频是 video 1，风格配了 `styles[].audio`（每个时长档位一段音频，和源视频一样放 `seed/templates/` 并上传到 R2 的 `templates/`）时再带上 audio 1 做配乐，prompt 末尾自动加一句用它做背景音乐。
   - 方舟只读 haomaotoken 文件存储里的素材，所以每次提交都先把照片、源视频（和配乐）从 R2 读出来上传到 `/files/uploads`，不走签名地址。Seedance 单条最长 15 秒，`durations` 里超过 15 秒的档位会被接口拒绝（任务失败退积分），用 haomao 的站点要把最长档位改到 15 秒以内。
@@ -297,23 +305,30 @@ SMOKE_BASE_URL=https://video-template-staging.<子域名>.workers.dev SMOKE_EXPE
 - **安全**：非 GET 的 `/api/*`（webhook、CSP 报告和前端错误上报除外）要求 `Origin` 与站点同源；上传按文件头校验真实类型；上传和生成按用户限流；封禁用户会立即使会话失效；管理操作写入 `admin_audit`。
   - 登录后的 `redirect`（登录页和 Google 回调）只接受站内路径：`src/lib/redirect.ts` 拒绝反斜杠、控制字符，以及规范化后以 `//` 开头的地址，所以 `/sign-in?redirect=/\evil.com` 这类链接会落到个人中心。
   - 5xx 错误只对管理员返回 `message`；其他人只拿到错误码，详情以 `[api] <method> <path> <code>: <message>` 写入 Workers Logs。
-  - Google 登录：授权码流程带 PKCE（S256）和 nonce；One Tap 初始化前先从 `/api/auth/google/nonce` 取 nonce（同时写进 cookie），提交时两者必须一致。
-  - 邮箱验证码登录（没有 Google 账号的用户用）：登录页 Google 按钮下方填邮箱，`POST /api/auth/email/start` 发 6 位验证码（10 分钟有效），`POST /api/auth/email/verify` 校验后登录。库里只存以 `SESSION_SECRET` 为密钥的 HMAC（迁移 0017 `email_login_codes`）；同一邮箱 60 秒冷却、每小时最多 5 次，按 IP 限流，配了 Turnstile 时发码要过人机校验；输错 5 次作废，校验通过后按哈希删除，一个码只能用一次。不管邮箱有没有注册都返回同样的结果。验证码邮件直接发出、不进发件箱（不在库里留明文）；生产环境要配好发信才开（`/api/me` 的 `config.emailSignIn`），不需要新的环境变量。账号按邮箱合并：同一邮箱用 Google 或验证码登录是同一个账号。生成器主按钮先检查照片和授权勾选（缺哪个就在页面顶部弹提示），再弹出登录框，登录框和登录页共用同一个面板；用验证码登录不离开页面，点 Google 跳转前把已选照片缩到最长边 1280px 的 JPEG、存进 localStorage（1 小时有效），回来后恢复并立即删除，退出登录时也删除。本地开发时验证码随接口返回 `devCode` 并自动填上。 导航栏的「登录」也打开这个弹窗，不再跳到 `/sign-in`：打开时记下当前地址（路径、查询串和锚点），邮箱验证码登录后留在当前页，Google 登录回来落回同一页；`/sign-in` 页保留给直接访问和 OAuth 出错时使用。
+  - Google 登录：授权码流程带 PKCE（S256）和 nonce；未登录首屏请求 `/api/me` 时会直接随会话返回 `oneTapNonce` 并写入 cookie（`/api/auth/google/nonce` 保留作退出登录后等场景的回退），提交时两者必须一致。
+  - 邮箱验证码登录（没有 Google 账号的用户用）：登录页 Google 按钮下方填邮箱，`POST /api/auth/email/start` 发 6 位验证码（10 分钟有效），`POST /api/auth/email/verify` 校验后登录。库里只存以 `SESSION_SECRET` 为密钥的 HMAC（迁移 0017 `email_login_codes`）；同一邮箱 60 秒冷却、每小时最多 5 次，按 IP 限流，配了 Turnstile 时发码要过人机校验；输错 5 次作废，校验通过后按哈希删除，一个码只能用一次。不管邮箱有没有注册都返回同样的结果。验证码邮件直接发出、不进发件箱（不在库里留明文）；生产环境要配好发信才开（`/api/me` 的 `config.emailSignIn`），不需要新的环境变量。账号按邮箱合并：同一邮箱用 Google 或验证码登录是同一个账号。生成器主按钮先检查照片和授权勾选（缺哪个就在页面顶部弹提示），再弹出登录框，登录框和登录页共用同一个面板；用验证码登录不离开页面，点 Google 跳转前已选照片已随草稿存进 IndexedDB（24 小时有效，存入前先缩到最长边 2048px 的 JPEG），回来后恢复并立即删除，退出登录时也删除。本地开发时验证码随接口返回 `devCode` 并自动填上。 导航栏的「登录」也打开这个弹窗，不再跳到 `/sign-in`：打开时记下当前地址（路径、查询串和锚点），邮箱验证码登录后留在当前页，Google 登录回来落回同一页；`/sign-in` 页保留给直接访问和 OAuth 出错时使用。
   - 账号以 Google 的 `sub` 为准：同一邮箱换了 Google 账号（`sub` 不同）会被拒绝登录，登录页提示联系客服（`account_conflict`）；dev 登录建的账号（没有 `sub`）在第一次 Google 登录时绑定。
   - 注销账号只保留邮箱的加盐哈希（`deleted_accounts` 表，盐是 `SESSION_SECRET`），同一邮箱重新注册时不发注册赠送、不绑定邀请人。更换 `SESSION_SECRET` 后旧记录对不上。
   - 上传请求必须带 `Content-Length`（否则 411），超过上限直接 413，不读请求体。服务商成片超过 100 MB 判失败并退积分；带长度时流式写入 R2，没带长度时边读边计数，超过 48 MB 即停止。
+  - 浏览器整页翻译（Chrome / Google 翻译把文字换成 <font>）后，React 再更新页面会抛 NotFoundError（insertBefore / removeChild），整页变错误页：水合前装 `src/lib/translate-guard.ts`（React issue #11538 的补丁，参照节点被挪走时插到它现在所在的那层前面），翻译照常可用
+  - 照片在浏览器里先检查、再上传（`src/lib/prepare-photo.ts`，生成器和手机传图页共用）：短边小于 `site.upload.minSide`（默认 300 px）或长边超过短边 `site.upload.maxRatio` 倍（默认 2.5）时直接提示换一张，不上传；大于 1.5 MB 的照片缩到长边 2048 px 的 JPEG 再传（按 EXIF 摆正，解不开的格式原样传）。上传接口读文件头再查一遍尺寸（422 `photo_too_small` / `photo_bad_ratio`），送审核前转 base64 分块进行——手机原图直接上传、逐字节转 base64 会让 Workers 免费计划以 exceededCpu 结束请求（503）。这两个默认值来自 Kling Motion Control 对参考图的官方限制（宽高都不小于 300px、长宽比 1:2.5 到 2.5:1），超出的照片到上游会失败
   - 支付结果页带 `order` 以外的参数（Dodo 回跳会附带买家邮箱）时，Worker 先 302 去掉再渲染，邮箱不会进入页面、统计、错误上报和浏览器历史；第一次请求的 URL 仍会出现在 Workers 日志里。
   - 举报表单不需要登录：回执只发给已登录、且填的是本人账号邮箱的举报人，防止表单被用来给任意地址发信；举报编号在提交后的页面上显示，处理结果仍发到填写的邮箱。
   - 报告安全漏洞见 [SECURITY.md](SECURITY.md)。
-- **CSP**：页面响应带 `Content-Security-Policy-Report-Only`，策略在 `src/server/csp.ts`。
+- **CSP**：页面响应默认由 `site.cspReportOnly` 控制为 `Content-Security-Policy-Report-Only`，策略在 `src/server/csp.ts`（含 `media-src 'self' blob:`）。
   - 每次请求生成 nonce（`src/server.ts` → `src/router.tsx` 的 `ssr.nonce`），框架输出的内联脚本都会带上它，`script-src` 不放开 `'unsafe-inline'`。自定义内联脚本放进 `__root.tsx` 的 `headScripts()`，不要直接写 `<script>`。
   - 已按官方文档放行 GA4、Cloudflare Web Analytics、Turnstile、Google 登录；接入新的第三方脚本、iframe 或接口时要在 `csp.ts` 里补来源。
-  - 违规报告发到 `/api/csp-report`，只写 Workers 日志 `[csp] <指令> blocked=… page=…`（URL 去掉 query，按 IP 限流）。上线观察一段时间没有误报后，把 `server.ts` 里的头名改成 `Content-Security-Policy` 即可强制执行。
+  - 违规报告发到 `/api/csp-report`，只写 Workers 日志 `[csp] <指令> blocked=… page=…`（URL 去掉 query，按 IP 限流）。上线观察一段时间没有误报后，把 `src/config/site.ts` 的 `cspReportOnly` 设为 `false` 即可强制执行 `Content-Security-Policy`。
   - 所有响应都带 `Permissions-Policy`，关闭摄像头、麦克风、定位、支付和 USB。
 
 ## 合规与内容安全
 
-- **AI 标识**：生成器和个人中心的播放器左上角有 “AI-generated” 角标，下方提示分享时保留标识。下载文件名为 `<brand>-ai-video-<视频 ID>.mp4`，举报人凭文件名即可定位。成片里没有烧录水印，也没有写入 C2PA（需要 Containers，见 [FEATURES P0-1](docs/SAAS_VIDEO_FEATURES.md)）。分享页同样显示角标和 AI 生成声明，链接预览图左上角也带 AI 标识。
+- **AI 标识**：生成器和个人中心的播放器左上角有 “AI-generated” 角标，下方提示分享时保留标识。下载文件名为 `<brand>-ai-video-<视频 ID>.mp4`，举报人凭文件名即可定位。分享页同样显示角标和 AI 生成声明，链接预览图左上角也带 AI 标识。
+  - 机器可读标记（站点开关 `site.aiMetadata.enabled`，**默认关闭**）：开启后，成片标记完成前，队列在 MP4 末尾追加一段 XMP（顶层 `uuid` box，带 etag 条件流式写回 R2），写入 IPTC `DigitalSourceType = trainedAlgorithmicMedia`、品牌、模型、视频 ID、生成时间和验证地址（`src/lib/xmp.ts`、`src/server/xmp.ts`）。已经带 XMP 或结构无法安全解析的文件保持原样。`exiftool -XMP:all <文件>` 能看到这些字段。关闭时成片保持原样，`/verify`、`GET /api/verify/:id`、页脚入口、sitemap 条目和服务条款里关于 XMP 的句子都不出现（页面和接口返回 404）。面向欧盟用户的站点建议开启（欧盟 AI Act 第 50(2) 条）；加州 SB 942 只约束月访问量超过 100 万的服务商。
+  - 验证页（开关开启时才有）：`/verify`（页脚有入口）在浏览器本地读取文件、不上传，显示是否带有标记；填了视频 ID 或带 `?id=` 时再查 `GET /api/verify/:id`（按 IP 限流），只返回品牌、生成时间和模型，不存在、已删除或已下架的视频返回 `found: false`。
+  - 还没有：烧录的可见水印、不可见水印和签名的 C2PA（需要 Containers，见 [FEATURES P0-1](docs/SAAS_VIDEO_FEATURES.md)）。重新编码和大多数社交平台会去掉元数据，所以角标、文件名和验证页仍然要保留。
+- **成片输出审核**：`OUTPUT_MODERATION=frames` 时，用 Cloudflare Media Transformations 绑定从每条成片抽 3 帧（1 秒、中点、80% 处），逐帧交给 `MODERATION_PROVIDER`。不通过就删除成片、任务以 `output_moderation_rejected` 失败并退积分；审核服务不可用时交给队列重试。默认关闭，因为本地 dev 里这个绑定只有 remote 模式；开启方法和费用见 [docs/env.md](docs/env.md)。100 MB 及以上的成片抽不了帧。
+- **同意记录**：创建生成任务时请求必须带 `consent: true`，否则在扣积分前返回 400 `consent_required`；勾选时间和当时语言下展示的同意文案原文写进 generations（`consent_at`、`consent_text`），用作肖像纠纷的证据。
 - **数据保留**：由 `site.retention` 控制，默认原图 7 天、成片 30 天，隐私政策文案自动读取这两个天数。
   - 每 5 分钟的 Cron 删除到期的 R2 对象，并在 D1 记 `expired_at`，每类每次最多处理 90 条。进行中任务用到的原图不删。
   - 过期后个人中心显示“已过期”，视频接口返回 410 `media_expired`。订单和积分流水不受影响。
@@ -323,7 +338,7 @@ SMOKE_BASE_URL=https://video-template-staging.<子域名>.workers.dev SMOKE_EXPE
     npx wrangler r2 bucket lifecycle add <name>-media expire-outputs outputs/ --expire-days 31
     ```
 - **举报下架**：页脚 “Report content” 进入 `/report`，无需登录。
-  - 表单字段：签名、邮箱、内容定位、原因、未同意声明。提交后写入 `takedown_requests`，截止时间为 48 小时后（`site.takedownSlaHours`）。内容定位里能识别出 `gen_` 视频 ID 或分享链接（`/v/<id>`，可带语言前缀）时自动关联；分享页的举报入口会把分享地址预填进表单。
+  - 表单字段：全名、邮箱、内容定位、原因、未同意声明和电子签名（举报人输入自己的名字；TAKE IT DOWN Act 要求，后台可见）。提交后写入 `takedown_requests`，截止时间为 48 小时后（`site.takedownSlaHours`）。内容定位里能识别出 `gen_` 视频 ID 或分享链接（`/v/<id>`，可带语言前缀）时自动关联；分享页的举报入口会把分享地址预填进表单。
   - 管理员在 `/admin/takedowns` 处理，概览页显示待处理数和超时数。
   - 下架：按原图 SHA-256 找出同一张照片的全部上传和成片，然后：
     - 进行中的任务判失败并退积分；
@@ -343,7 +358,9 @@ SMOKE_BASE_URL=https://video-template-staging.<子域名>.workers.dev SMOKE_EXPE
   - 推荐只填 `cfBeaconToken`（Cloudflare Web Analytics）：不写 Cookie，不需要同意横幅。
   - Clarity（可选）：填写 `analytics.clarityId` 后在 `<head>` 加载官方脚本，只在正式域名及子域执行，水合和切页复用已有实例；空值关闭。CSP 按配置开放 Clarity 与 Bing 所需来源，隐私政策同步披露。它不接入 GA4 同意横幅，地区同意要求需在 Clarity 后台及同意管理方案中配置。
   - Umami（可选）：填 `analytics.umamiWebsiteId` 和 `vars.UMAMI_ORIGIN`（实例地址，如 `https://umami.example.com`）。页面加载本站的 `/s/script.js`，上报到本站的 `/s/api/send`，由 Worker（`src/server/umami.ts`）代理，网页源码和 JS 里看不到实例域名。不写 Cookie，不受同意横幅控制；代理不转发 Cookie，访客 IP（`CF-Connecting-IP`）只用于判断国家和统计独立访客。只有 `APP_ENV=production` 才上报；本地 dev、e2e、staging 拿到的是空脚本，什么都不转发。`/admin` 后台页面不上报。
+  - Microsoft Clarity（可选，热力图和会话回放）：`analytics.clarityId` 填项目 ID。只在 `site.domain`（含 `www.`）上加载，本地 dev、e2e、staging 和 `/admin` 都不加载。填了它也会出现同意横幅：访客接受前 Clarity 以无 Cookie 模式录制（`consentv2` 的 `analytics_Storage: denied`，每次页面浏览一个 ID），接受后才写 `_clck` / `_clsk`，拒绝时 Clarity 删除它们。在 Clarity 后台 Settings → Setup 把 **Cookies** 关掉，让项目按这些同意信号工作。表单输入由 Clarity 默认的遮盖规则隐藏。CSP 已放行 `https://*.clarity.ms` 和 `https://c.bing.com`。
   - 填了 `ga4Id` 才启用 GA4，同时出现同意横幅和页脚 “Cookie settings”。采用 Consent Mode v2 basic 模式：访客接受前不加载 gtag.js，事件只进 `dataLayer`；广告类同意项始终为 denied。拒绝或撤回时删除 `_ga`、`_ga_*`、`_gid`（当前主机和各级父域）。选择存在 `localStorage` 的 `consent.analytics`，逻辑见 `src/lib/consent.ts`。
+  - 按地区取默认值（和多数面向消费者的网站一样）：Worker 读 `cf-ipcountry`，把默认值写在 `<html data-consent-default>` 上。欧洲经济区、英国、瑞士的访客，以及国家未知的访客（`XX`、`T1` 或没有这个头，本地开发属于这一类）默认 `denied` 并弹横幅；其他地区默认 `granted`、不弹横幅，GA4、Clarity 的 Cookie 和 `vt_attr` 从第一个页面就生效，页脚“Cookie 设置”可以打开卡片拒绝。存储的选择始终优先于默认值。隐私政策按这个区分说明。
   - 来源归因写第一方 Cookie `vt_attr`（90 天）。填了 `ga4Id` 时它和 GA4 一样等访客接受后才写入：接受时补记本次访问的来源，拒绝或撤回时删除；没写 Cookie 的访客，注册和订单记为 direct，访问统计照常计数。没填 `ga4Id` 时没有横幅，`vt_attr` 直接写入；按欧盟 ePrivacy 的严格解释这也需要事先同意，主要面向欧盟用户时应启用横幅。逻辑见 `src/lib/attribution.ts`。
 - **导出我的数据**（GDPR 第 15、20 条）：个人中心设置页可下载 JSON（`GET /api/account/export`），包含账号、会话、订单、积分流水与批次、上传与生成记录、留言、本人提交的举报和发信记录；按用户限流。不含 R2 路径、服务商请求 ID、内部错误信息和成本，也不含他人针对本人视频的举报。媒体文件不打包，仍在保留期内的可从个人中心下载。字段清单见 `src/server/account-export.ts`。
 - **数据库备份**：每 5 分钟的 Cron 发现当天（UTC）还没有备份时，把 D1 导出成 SQL（建表语句加全部数据，`sessions` 只导结构），gzip 后存到 MEDIA 的 `backups/d1/<日期>.sql.gz`，保留 30 天（`src/server/backup.ts`）。当天最多尝试 3 次，第 3 次仍失败时给 `ADMIN_EMAILS` 发 `backup_failed` 告警。`backups/` 没有公开路由，R2 生命周期规则也不要覆盖它。
@@ -361,7 +378,7 @@ SMOKE_BASE_URL=https://video-template-staging.<子域名>.workers.dev SMOKE_EXPE
 用 [Cloudflare Email Service](https://developers.cloudflare.com/email-service/)（public beta）从 Worker 直接发信：`send_email` binding 名为 `EMAIL`，发件地址是 `vars.EMAIL_FROM`。
 
 - **发给用户**：积分到账、成片完成（附保留截止日期）、生成失败退积分、举报回执（只发给填写本人账号邮箱的登录用户）、举报处理结果、视频因举报被删除。语言跟随用户最近一次下单或生成时所用的界面语言，举报相关邮件用举报时的页面语言。已注销或封禁的用户不发。
-- **发给管理员**（`ADMIN_EMAILS`，中文）：新举报；截止前 12 小时和超时后各提醒一次；新留言和站内反馈（Reply-To 是留言人；反馈的邮箱选填，不是邮箱地址时回复落到客服邮箱）。留言人不会收到自动回复，避免表单被用来向任意邮箱发信。
+- **发给管理员**（`ADMIN_EMAILS`，中文）：新举报；截止前 12 小时和超时后各提醒一次；新留言和站内反馈（Reply-To 是留言人；反馈的邮箱选填，不是邮箱地址时回复落到客服邮箱）；支付争议和 Stripe 欺诈预警，同一争议同一阶段只发一次。留言人不会收到自动回复，避免表单被用来向任意邮箱发信。
 - **发送方式**：业务事件先写入 D1 的 `email_outbox` 表，`dedupe_key` 唯一（如 `order_paid:<订单号>`）。webhook 重放、队列重投、Cron 重叠都只发一封。
   - 写入后立即发送。遇到限流、日配额或服务端错误时，按 5、15、45… 分钟退避，最多 5 次，由每 5 分钟的 Cron 补发；发件人未验证等永久错误直接记为失败。
   - 发送语义是“至少一次”：邮件已发出、但 Worker 在写回状态前中断时，可能多发一封。
@@ -404,7 +421,8 @@ SMOKE_BASE_URL=https://video-template-staging.<子域名>.workers.dev SMOKE_EXPE
 ```bash
 npm run typecheck
 npm test            # vitest：Waffo/Dodo/Stripe 验签与事件映射、退款比例与退款单号规则、归因解析、生产环境禁用 mock、Turnstile 与图片审核的错误分支、邮件模板与发送重试判定、告警阈值与时间桶、GA4 同意前不加载与撤回删 Cookie、CSP 报告和前端错误上报的摘要与脱敏、登录跳转校验、Google 登录的 PKCE 与 nonce、账号按 sub 绑定与注销邮箱不再领注册赠送、成片下载大小上限、D1 备份的 SQL 转义、付款通知的消息格式与地址脱敏、归因 Cookie 等同意后才写入、5xx 详情不对非管理员返回、生产环境拒绝弱 SESSION_SECRET、上线配置检查与 doctor 的规则和 wrangler 输出解析、模板同步计划的分层、密钥同步计划的校验与脱敏、积分账务、兑换码、邀请奖励与订阅（日历月、年付补发、续费、乱序事件、周期校正时当期积分到期时间对齐、退款、Dodo/Waffo 事件映射，SQLite）、运营设置的校验缓存与每日上限、测试连接与脱敏、e2e 验收目录与用例一致
-npm run test:e2e    # Playwright：需要先 npm run seed:local；会复用已运行在 127.0.0.1:3000 的 dev server
+npm run test:e2e    # Playwright：需要先 npm run seed:local；会复用已运行在 127.0.0.1:3000 的 dev server；串行，约 10 分钟
+E2E_PORT=3200 npx playwright test tests/e2e/payments.spec.ts tests/e2e/smoke.spec.ts   # 只跑和改动相关的 spec，对照表见 tests/e2e/CATALOG.md 的“改哪里跑哪些”
 E2E_PORT=3200 npm run test:e2e   # 3000 被其它程序占用时换端口
 npm run seo:check   # 需要 dev server 在跑；报告写到 .tmp/seo-check/
 SMOKE_BASE_URL=https://<domain> npm run test:smoke   # 线上只读巡检，见“部署到 Cloudflare”
@@ -413,12 +431,14 @@ SANDBOX_PROVIDER=dodo E2E_PORT=3200 npm run test:sandbox   # 支付商 test 模�
 
 按风险分级的 e2e 验收目录和未覆盖项见 [tests/e2e/CATALOG.md](tests/e2e/CATALOG.md)。新增或改名用例时要同步更新，`npm test` 会核对两边是否一致。sandbox e2e 的前提、webhook 模式和测试卡见 [docs/payments.md](docs/payments.md) 的“sandbox e2e”。
 
-e2e 覆盖（70 个用例）：
+e2e 覆盖（81 个用例）：
 - 购买与生成：完整主路径（含中文站路径和 AI 角标）、余额不足时在生成器里直接买够用的最便宜的包（暂停收款时禁用）、支付失败、未登录回到结果页（邮箱在渲染前被 302 去掉）、余额不足、生成失败退款；3 路轮询并发处理同一任务时只落库一次、成片不被误删，后台显示成本与毛利。
 - 合规：
   - 保留期：进行中任务的原图不清理；到期原图不能再用；成片过期返回 410，个人中心显示已过期；重复清理是幂等的。
   - 举报下架：匿名在 `/report` 举报，管理员在后台下架。同一张原图的两条成片都被删除，无关成片保留，重新上传同一张图被拦截；已处理的举报不能再处理，处理结果写入审计。
   - 审核：不通过的上传返回 422。
+  - AI 标记：下载的成片末尾只有一个 XMP box，含视频 ID 和 `trainedAlgorithmicMedia`、不含用户信息，Range 读取仍正确；`/verify` 能识别该文件，去掉标记的文件提示没有标记，删除记录后提示查不到；输出审核不通过的成片不交付、退积分，验证接口查不到。
+  - 同意与签名：创建生成不带 `consent: true`（缺失、为假或不是布尔值）返回 400 且不扣积分；举报缺电子签名被拒，后台列表显示签名。
   - 导出我的数据：设置页下载的 JSON 含本人全部记录，不含他人数据和内部字段；未登录和注销后返回 401。
   - 成片分享：个人中心开启后，匿名访客看到 noindex 的分享页和 AI 标识，页面不暴露视频 ID；他人不能开启或停止分享；停止分享后旧链接 404，成片到期或被举报下架后 410；封面不是 JPEG 或审核不通过被拒；凭带语言前缀的分享链接举报即可定位视频。
 - 积分批次：后台补发限时积分后，生成先扣它、失败原路退回，到期作废后账单页提示消失；余额只够一次时并发发起两个生成，一个成功一个 402。账务规则另有单元测试在 SQLite 上执行全部迁移核对。
@@ -428,15 +448,17 @@ e2e 覆盖（70 个用例）：
 - 订阅：月付从定价页订阅、积分随当期作废、续费重放只入账一次、少付的转人工、扣款失败与恢复、账单页到期取消与撤销、客户门户、续费期间拒绝再订阅和注销、终止后可重新订阅；年付按月补发（Cron 重复执行不重发）、迟到的旧状态事件被忽略、退款只回收订阅积分并停止补发。
 - 告警与死信：任务进死信后判失败、只退一次积分；健康检查触发失败率和死信告警，同一时间桶重复执行不重发。
 - 交易邮件：支付回调重放只发一封、语言跟随用户；生成成功与失败各一封，重复判失败不重发；未登录举报不发回执、登录用户填本人邮箱才发，临近截止与超时提醒各一次、下架后通知举报人和作者且不再提醒；留言只提醒管理员；注销清除发件记录；后台邮件页。
+- 支付争议：争议开启时回收订单积分且只回收一次（重放和同一争议的新事件都是 duplicate），胜诉补回一次；败诉时订单记为全额退款，后台订单详情显示争议。
 - 支付事件与退款：并发和重放支付事件、部分消费后退款、两次部分退款、管理员退款时补登后迟到的同号 webhook 不重复扣；退款先于付款到达时重试后照常回收；少付或套餐不符不入账并告警、退款后结案，折扣码和换币种照常入账，孤儿事件告警、其他站点的事件忽略；webhook 丢失时成功页和 Cron 都能查单补救（指数退避、5 个并发查单只入账一次、迟到的 webhook 不重复入账、别人的订单返回 404、少付的付款不再自动重查），后台查单能直接入账或提示人工核对。
 - 订单与用户数据：账单和订单详情显示实付与部分退款，他人订单接口返回 404、页面显示找不到；后台搜索订单、退款金额无效时拦下可重试、部分退款与补单后时间线完整；用户按付费、封禁筛选和按积分排序，非法排序值不进 SQL；积分流水超过一页时加载更多不重不漏。
 - 安全与权限：CSRF、伪造上传和越权、后台权限、后台概览的配置检查不回传密钥值、积分调整和封禁、dev 登录与 mock 支付只接受本机直连；登录后的站外 `redirect` 回退到个人中心，登录页遇到未知错误码（如 `__proto__`）显示通用提示；支付结果页带的邮箱参数在渲染前就被 302 去掉。
 - 安全响应头：内联脚本都带本次请求的 nonce；公开页、登录后生成和后台浏览器内零 CSP 违规；注入不带 nonce 的脚本会被报告；报告接口不受同源校验影响。
 - 前端错误上报：全局异常和未处理的拒绝各报一次、页面地址不带 query，重复错误不重报，每页最多 5 条；渲染出错时错误页显示的编号与上报一致，接口恢复后点重试回到正常页面。
 - 归因与报表：UTM 归因跨会话保持、报表和 CSV。
+- 生成器草稿与手机传图：访客选的照片、风格和时长跨登录和付款保留，开始生成后清除；手机页传的图到达桌面，二维码不能重复用；手机页没有 token 或格式不对会提示；未知 token、伪装的文件和重复取走都被拒绝。
 - SEO：seo-check 全部规则、中英文首页水合、客户端路由切换后 head 同步、语言链接可抓取。
 
-产物在 `.tmp/video-template-e2e/`：`report/`（HTML 报告，含每步截图和 trace）、`results.json`、`test-results/`。
+产物在 `.tmp/video-template-e2e/`：`report/`（HTML 报告，含每步截图和 trace）、`results.json`、`test-results/`。CI 里（设了 `CI`）只有失败的用例保留 trace 和截图，工作流只在失败时上传 `report/`，保留 3 天：私有站点仓库的工件占账号的 Actions 存储（GitHub Free 为 500 MB）。
 
 ## 目录
 

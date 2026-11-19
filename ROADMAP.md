@@ -30,12 +30,25 @@
   - 上传审核：OpenAI omni-moderation 或 mock。
   - 联系和举报表单接入 Turnstile；支付结果页从地址栏去掉 `email`。
   - 说明见 README 的“合规与内容安全”。
+- 2026-12-02 法规节点前的合规补强已在本地完成（2026-11-01），调研报告和工件在 `.tmp/template-gaps-2026-11/`、`.tmp/compliance-2026-11/`：
+  - 成片机器可读标记：队列在成片末尾追加 XMP（IPTC `trainedAlgorithmicMedia`、品牌、模型、视频 ID、验证地址），新增免费的 `/verify` 验证页和 `GET /api/verify/:id`。exiftool 13.60 能读出全部字段，ffmpeg 解码正常。依据：欧盟 AI Act 50(2)（已上市系统宽限到 2026-12-02）、加州 SB 942。C2PA 和水印仍未接入，见下一步。XMP/验证页和欺诈预警自动退款为站点开关（`aiMetadata`、`fraudWarningAutoRefund`），默认关闭。
+  - 成片输出审核：`OUTPUT_MODERATION=frames` 用 Cloudflare Media Transformations 抽 3 帧逐帧审核，不通过删片退积分。默认 `off`，真实绑定未实测。
+  - 服务端记录同意（`consent_at`、`consent_text`，迁移 0016）；举报表单加电子签名；隐私政策加“不面向 13 岁以下”。
+  - 支付争议：Stripe、Dodo 的争议事件回收和补回积分并通知管理员，Stripe 欺诈预警自动退款（迁移 0017）。
 - P1-9 交易邮件已在本地完成（Cloudflare Email Service，D1 发件箱去重、退避重试、后台邮件页），工件在 `.tmp/transactional-email/`。说明见 README 的“交易邮件”。随后加了可选的 Resend 发信渠道（`RESEND_API_KEY`，单元测试覆盖，未实测真实发信）。
 - 监控告警已在本地完成：Cron 健康检查（生成失败率、死信、积压、支付回调、付款待核对、邮件），按 6 小时时间桶去重发给 `ADMIN_EMAILS`；死信队列由同一 Worker 消费，判失败并退积分。说明见 README 的“监控告警”。
 - GA4 同意横幅已在本地完成：Consent Mode v2 basic 模式，接受前不加载 gtag.js，撤回时删除 `_ga` 系列 Cookie；页脚可重新打开；隐私政策按统计配置自动调整。默认配置不启用 GA4（推荐 Cloudflare Web Analytics），浏览器流程用临时 `ga4Id` 验证过一次。说明见 README 的“合规与内容安全”。
+- 按风格可选的背景音乐（2026-11-02，本地完成）：`site.styles[].music`（默认 `null`）每个时长档位一段 AAC（m4a，seed/templates/ → R2 `templates/`）；成片存进 R2 后、审核和 XMP 之前，`src/server/music.ts` 用 `mediabunny` 纯 JS 混流（视频包原样拷贝，换掉原有音轨），期间 etag 变了、文件缺失、成片超过缓冲上限或 MP4 读不了都只 warn 跳过，不影响生成和积分。单元测试覆盖混流结果与跳过路径；未验证：真实 provider 成片和 Workers 运行时里的耗时与内存（本地 Node 约 25ms），也没有 e2e。
+- 双人风格、按风格指定服务商和时长（2026-11-11，本地完成）：`site.styles[]` 可选 `photos: 2`、`provider`、`durations`；`POST /api/generations` 接受 `uploadIds`，第二张照片存 `generations.second_upload_id`（迁移 0018），保留期清理、举报下架、账号导出同步处理；NanoAPI 一次提交两张 `image_urls`，fal、yir 拒绝多图；生成器双槽位上传，草稿带两张。单元测试覆盖任务提交、provider 选择、去重、保留期、配置检查；e2e 有单人风格收两张照片的拒绝用例，双人 UI 用例在模板里跳过（模板没有双人风格）。真实效果在 christmas-dance-ai 用 NanoAPI genjutsu 手动实测过一次（2026-11-11，480p 15 秒，计费 $1.755）：第 1 张照片对应左边的人，没有串脸；还没走过模板代码的线上全链路。
+- 主推风格 `site.featuredStyleId`（2026-11-11）：首页 hero 标签和生成器默认选中它并排在最前，默认风格（API 回落）不变；christmas-dance-ai 用它主推双人舞。
+- 首页可选规格表（2026-11-07，本地完成）：`specs`（`{ eyebrow, title, rows: [{ label, value }] }`，设为 `null` 不渲染）在 What is 之后渲染为 `<dl>`，模板默认值从 `site` 读上传格式、风格、时长、比例和最低价。起因是第一个热词站的 GEO 检查里，ChatGPT 推荐卡片的事实基本照搬竞品页面的规格块。没有单独的 e2e，靠 typecheck 和 SSR 输出核对。
+- 文章段落可选表格（2026-11-04，本地完成）：`sections[i].table`（`{ head, rows }`）渲染为带行标题的 `<table>`，窄屏横向滚动，用于对比表和规格表；模板示例 `howTo` 带一张时长对应积分的表，e2e 在“文章可选能力”用例里核对表头和行数。
 - 文章封面已完成（2026-10-26）：`site.articles[].cover` 可选，用在 `/guides` 卡片、文章顶部、`og:image` 和 Article `image`；`scripts/article-cover.mjs` 从站点视频截帧生成 1200×630 封面（2026-10-27 起带标题、分类标签、品牌名和 6 种版式）；e2e 覆盖 SPA 切换后 `og:image` 不残留。
 - 可选的 Umami 统计已完成并在 christmasdanceai 上线（2026-10-26）：只有 production 上报，`/admin` 不上报；`analytics.umamiWebsiteId` 加 `UMAMI_ORIGIN`，Worker 同域代理 `/s/script.js` 和 `/s/api/send`（不转发 Cookie、只回传状态码 / body / Content-Type、5 秒超时 502），实例域名不进前端；隐私政策按配置调整，单元测试覆盖。说明见 README 的“统计与 Cookie”。
-- CSP 与 Permissions-Policy 已在本地完成：页面下发 `Content-Security-Policy-Report-Only`，内联脚本用每次请求的 nonce，违规写 `[csp]` 日志。dev 与生产构建下公开页、生成流程、后台、GA4 同意后加载均为零违规。**仍是 Report-Only**，上线观察无误报后再改为强制执行。说明见 README 的“关键设计”。
+- 同意横幅改为按地区（2026-10-31）：欧洲经济区、英国、瑞士和无法判断国家的访客默认关闭统计 Cookie 并弹横幅，其他地区默认开启、不弹横幅，页脚可拒绝。依据：竞品（JibJab、Elf Yourself、Kling、CapCut 等）对美国访客都不弹横幅；之前全球弹横幅时，不点横幅的大部分访客不进 GA，漏斗看不全。单元测试覆盖国家判断和默认值，本地带 `cf-ipcountry` 实测，工件在 `.tmp/geo-consent/`。
+- 先体验后登录和手机扫码传图（2026-10-31，本地完成）：生成器草稿（照片、风格、时长）存 IndexedDB，跨登录和付款保留，访客看到草稿保留提示和最低价；桌面端扫码用手机选图，经 R2 `handoff/` 中转。没改用户表、积分和支付，完整的免登录购买等 Clarity/GA 漏斗数据再定。单元测试和 4 个 e2e 用例覆盖，工件在 `.tmp/guest-draft-handoff/`；真机扫码和真实 R2 条件写未验证。
+- 可选的 Microsoft Clarity 录屏已完成（2026-10-31）：`analytics.clarityId`，只在正式域名加载、`/admin` 不录；未同意时无 Cookie 模式，同意横幅的选择同步给 Clarity（`consentv2`）；隐私政策和横幅文案按配置调整，CSP 放行，单元测试覆盖。用于排查“打开收银台不付款”。
+- CSP 与 Permissions-Policy 已在本地完成：默认按 `site.cspReportOnly` 下发 `Content-Security-Policy-Report-Only`（策略含 `media-src 'self' blob:`），内联脚本用每次请求的 nonce，违规写 `[csp]` 日志。dev 与生产构建下公开页、生成流程、后台、GA4 同意后加载均为零违规。**仍是 Report-Only**，上线观察无误报后将 `site.cspReportOnly` 设为 `false` 即可强制执行。说明见 README 的“关键设计”。
 - 开源前安全排查（2026-10-20）已在本地完成，报告在 `.tmp/security-audit/report.md`（只在作者本机，不入库）：
   - 已修复：
     - 登录后 `redirect` 的开放重定向，包括 `/\evil`、`/..//evil` 等写法；
@@ -113,10 +126,13 @@
   - R2 生命周期规则还没有在线上 bucket 配置。
 - 交易邮件：本地只模拟发送。还没有 Onboard 发信域名、真实发出过邮件，也没有验证垃圾箱投递率和 Gmail/Outlook 的显示效果；需要 Workers Paid。
 - Cloudflare 线上部署：D1/R2/KV/Queues/Rate Limiting/Cron 的实际绑定、自定义域名、HSTS、`robots.txt` 和 sitemap 的线上输出、Core Web Vitals。
-- 线上 D1 执行迁移 0014、0015（需要 `npm run db:migrate:remote`）。
+- 线上 D1 执行迁移 0014–0017（需要 `npm run db:migrate:remote`）。
+- 成片输出审核的真实抽帧（Media Transformations 绑定、计费）；e2e 只用 mock 验证了拒绝后的失败和退款。
+- 争议事件只用按文档构造的 payload 测过：Stripe 可用 test 卡 `4000 0000 0000 0259` 触发真实拒付，还没跑；Dodo 的 test 模式触发不了。
 - 成片分享：社交平台（X、Facebook、Telegram、微信等）抓取 OG 预览；Safari 上的封面截帧（不支持 canvas `filter` 的 Safari 版本上背景不会模糊，但仍能截出封面）。
 - D1 备份：线上 Cron 每天写入 R2、30 天清理，以及 `scripts/restore-d1.mjs --remote` 恢复到新建的线上库。
 - 付款即时通知：没有往真实的 Telegram、飞书、Discord webhook 发过消息。
+- 照片尺寸检查：`site.upload.minSide`（300）和 `maxRatio`（2.5）取自 Kling Motion Control 的官方限制，没有用真实的 Kling 请求逐档验证；浏览器端缩图依赖 `createImageBitmap`，iOS Safari 选到 HEIC 时能不能解开没有真机验证（解不开就原样上传，交给接口判）。
 
 ## 已知问题
 
@@ -209,7 +225,7 @@
 
 - 付费墙放在想生成的那一刻：已登录且余额不足时，生成器主按钮直接下单够用的最便宜的积分包（`cheapestPackageCovering`），下方链接到价格页；没有够用的包时仍跳价格页。下单逻辑抽成 `src/lib/checkout.ts` 的 `useCheckout`，价格页和生成器共用，暂停收款规则不变。
 - 价格页：`pricing.approx` 换成 `pricing.makes`，按 `packageMakes` 列出买得起的最长和最短时长各能做几条；网格列数按包数（2、3、4）排列。单条包（正好一条最短时长）由站点在 `site.packages` 里加。
-- `/llms.txt`：由 `site` 和英文文案生成（关键事实、页面、指南、条款），`seo:check` 和线上 smoke 检查它。复盘里没有证据表明它带来推荐，作为低成本项。
+- `/llms.txt`：由 `site` 和英文文案生成（关键事实、页面、指南、条款），`seo:check` 和线上 smoke 检查它。复盘里没有证据表明它带来推荐，作为低成本项。2026-11-05 关键事实补上配乐、无可见水印（开了 `aiMetadata` 时注明 XMP 标记）和站点自填的 `site.seo.llmsFacts`，起因是 ChatGPT 把第一个热词站和同名竞品混为一谈。
 - 告警通道：所有告警和 D1 备份失败同时发到 `PAYMENT_NOTIFY_WEBHOOK_URL`（KV 去重）；新增“视频服务商余额”告警，每小时查一次，低于 10 美元告警。余额查询抽成 `src/server/video-balance.ts`，测试连接共用。
 - 测试：`tests/unit/pricing.test.ts`（`packageMakes`、`cheapestPackageCovering`）、`tests/unit/llms.test.ts`、`tests/unit/alerts.test.ts`（余额阈值、聊天群去重）；e2e 2 个（生成器就地购买到积分到账；暂停收款时就地购买禁用）。
 - 未验证：线上聊天群实际收到告警（飞书关键词）；余额告警在真实 yir 账户上触发。
@@ -361,7 +377,7 @@
    - 线上真实付款和真实生成未验证（支付只在 Dodo、Waffo 沙盒跑过）。
    - 运行 `npm run seo:check -- --base https://<domain> --production` 和 `/seo-audit https://<domain>`（含 Core Web Vitals）。
 2. P0 剩余项：
-   - C2PA 加成片内烧录水印：本地技术验证已完成。接下来在 Docker 里实测，再接入 Worker（`POSTPROCESS_PROVIDER`，默认关闭，因为开启后 deploy 需要 Docker 和 Workers Paid）；生产签名证书见 [docs/SAAS_VIDEO_FEATURES.md](docs/SAAS_VIDEO_FEATURES.md) 的 P0-1。
+   - C2PA 加成片内烧录水印（XMP 元数据和验证页已完成，这一项补上签名和水印两层）：本地技术验证已完成。接下来在 Docker 里实测，再接入 Worker（`POSTPROCESS_PROVIDER`，默认关闭，因为开启后 deploy 需要 Docker 和 Workers Paid）；生产签名证书见 [docs/SAAS_VIDEO_FEATURES.md](docs/SAAS_VIDEO_FEATURES.md) 的 P0-1。
    - 未成年人和名人检测：OpenAI 的图片类别不覆盖这两类。
 3. P1：
    - 首单转化：2026-10-25 定为不做免费生成（成本高、易被刷），改用站点层的单条积分包和生成器就地购买（见 #36）；带水印的免费试用不再计划。

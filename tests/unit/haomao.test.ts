@@ -23,6 +23,7 @@ const input = (extra: Record<string, unknown> = {}) => ({
   durationSeconds: 12,
   imageUrl: 'https://moonhop.ai/media/uploads/upl_1?exp=1&sig=s',
   imageKey: 'uploads/u_1/up_1.jpg',
+  imageUrls: ['https://moonhop.ai/media/uploads/upl_1?exp=1&sig=s'],
   sourceVideoUrl: 'https://moonhop.ai/media/templates/neon-12s.mp4',
   sourceVideoKey: 'templates/neon-12s.mp4',
   webhookUrl: 'https://moonhop.ai/api/webhooks/haomao?gen=gen_1&token=t',

@@ -71,7 +71,7 @@ export function createHaomaoProvider(env: Env): VideoProvider {
       // 多人风格：主角照片是 image 1，可选位置的照片按风格里的顺序接在后面
       const seats = input.style.seats?.length ? input.style.seats : null
       const seatImages = seats ? (input.seatImages ?? []) : []
-      const imageUrls = await Promise.all([input.imageKey, ...seatImages.map((seat) => seat.key)].map(upload))
+      const imageUrls = await Promise.all([input.imageKey!, ...seatImages.map((seat) => seat.key)].map(upload))
       const videoUrl = await upload(input.sourceVideoKey)
       const audioUrl = input.audioKey ? await upload(input.audioKey) : null
       const prompt = seats ? seatPrompt(seats, seatImages.map((seat) => seat.seatId)) : (input.style.prompt ?? site.video.haomao.prompt)

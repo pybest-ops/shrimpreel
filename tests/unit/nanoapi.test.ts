@@ -14,7 +14,7 @@ const input = (webhookUrl = 'https://moonhop.ai/api/webhooks/nanoapi?gen=gen_1&t
   generationId: 'gen_1',
   style,
   durationSeconds: 12,
-  imageUrl: 'https://moonhop.ai/media/uploads/upl_1?exp=1&sig=s',
+  imageUrls: ['https://moonhop.ai/media/uploads/upl_1?exp=1&sig=s'],
   sourceVideoUrl: 'https://moonhop.ai/media/templates/neon-12s.mp4',
   imageKey: 'uploads/u_1/up_1.jpg',
   sourceVideoKey: 'templates/neon-12s.mp4',
@@ -80,7 +80,7 @@ describe('nanoapi provider：提交', () => {
     expect(posts()[0]!.body).toEqual({
       model: 'genjutsu-1.0',
       mode: 'motion_control',
-      image_urls: [input().imageUrl],
+      image_urls: [input().imageUrls[0]!],
       video_url: input().sourceVideoUrl,
       resolution: site.video.nanoapi.resolution,
       webhook_url: input().webhookUrl,
@@ -105,7 +105,7 @@ describe('nanoapi provider：提交', () => {
         ok({
           items: [
             task('tk_other', 'https://moonhop.ai/media/uploads/upl_2?exp=1&sig=x', input().sourceVideoUrl),
-            task('tk_same', input().imageUrl, input().sourceVideoUrl, 'failed'),
+            task('tk_same', input().imageUrls[0]!, input().sourceVideoUrl, 'failed'),
           ],
           has_more: false,
         }),
@@ -117,12 +117,41 @@ describe('nanoapi provider：提交', () => {
     expect(Math.abs(age - 3 * 3600 * 1000)).toBeLessThan(5000)
   })
 
+  it('首次提交（isRetry: false）跳过历史列表去重直接 POST，队列重试（isRetry: true）才回溯查重', async () => {
+    const calls = stubFetch({
+      'GET /v1/tasks': () => ok({ items: [task('tk_existing', input().imageUrls[0]!, input().sourceVideoUrl)], has_more: false }),
+      'POST /v1/tasks': () => ok({ id: 'tk_fresh', status: 'queued' }),
+    })
+    const provider = createNanoapiProvider(env())
+    expect(await provider.submit({ ...input(), isRetry: false })).toEqual({ requestId: 'tk_fresh', meta: {} })
+    expect(calls.map((c) => c.method)).toEqual(['POST'])
+
+    expect(await provider.submit({ ...input(), isRetry: true })).toEqual({ requestId: 'tk_existing', meta: {} })
+    expect(calls.map((c) => c.method)).toEqual(['POST', 'GET'])
+  })
+
+  it('双人：image_urls 带两张，去重要求任务里包含全部图片地址', async () => {
+    const two = [...input().imageUrls, 'https://moonhop.ai/media/uploads/upl_2?exp=1&sig=s2']
+    const duo = { ...input(), imageUrls: two }
+    const calls = stubFetch({ 'GET /v1/tasks': empty, 'POST /v1/tasks': () => ok({ id: 'tk_1', status: 'queued' }) })
+    await createNanoapiProvider(env()).submit(duo)
+    expect(calls.find((call) => call.method === 'POST')!.body).toMatchObject({ image_urls: two })
+
+    // 只含第一张的任务不算同一个（别人的单人任务恰好用了同一张图）；两张都在才沿用
+    const partial = { id: 'tk_one', status: 'queued', input: { image_urls: [two[0]], video_url: duo.sourceVideoUrl } }
+    const full = { id: 'tk_both', status: 'queued', input: { image_urls: [two[1], two[0]], video_url: duo.sourceVideoUrl } }
+    stubFetch({ 'GET /v1/tasks': () => ok({ items: [partial], has_more: false }), 'POST /v1/tasks': () => ok({ id: 'tk_new', status: 'queued' }) })
+    expect(await createNanoapiProvider(env()).submit(duo)).toEqual({ requestId: 'tk_new', meta: {} })
+    stubFetch({ 'GET /v1/tasks': () => ok({ items: [partial, full], has_more: false }) })
+    expect(await createNanoapiProvider(env()).submit(duo)).toEqual({ requestId: 'tk_both', meta: {} })
+  })
+
   it('图片地址相同但源视频不同不算同一个任务；去重要翻页找', async () => {
     const calls = stubFetch({
       'GET /v1/tasks': (url) =>
         url.searchParams.get('starting_after') === 'tk_a'
-          ? ok({ items: [task('tk_b', input().imageUrl, input().sourceVideoUrl)], has_more: false })
-          : ok({ items: [task('tk_a', input().imageUrl, 'https://moonhop.ai/media/templates/other.mp4')], has_more: true }),
+          ? ok({ items: [task('tk_b', input().imageUrls[0]!, input().sourceVideoUrl)], has_more: false })
+          : ok({ items: [task('tk_a', input().imageUrls[0]!, 'https://moonhop.ai/media/templates/other.mp4')], has_more: true }),
     })
     expect(await createNanoapiProvider(env()).submit(input())).toEqual({ requestId: 'tk_b', meta: {} })
     expect(calls.map((call) => call.url.searchParams.get('starting_after'))).toEqual([null, 'tk_a'])

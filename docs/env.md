@@ -28,6 +28,7 @@
 | `STRIPE_PRODUCTS` | JSON，值是 Price ID，如 `{"starter":"price_xxx"}` | 用 Stripe 时 | 积分包用一次性价格，订阅套餐用 recurring 价格。`scripts/stripe-setup.mjs` 可以生成 |
 | `VIDEO_PROVIDER` | `fal`、`yir`、`nanoapi`、`haomao`、`mock` | 是 | 模型和单价在 `site.video` 里配置，yir 的配置在 `site.video.yir`，NanoAPI 的在 `site.video.nanoapi`，haomaotoken 的在 `site.video.haomao` |
 | `MODERATION_PROVIDER` | `openai`、`none`、`mock` | 是 | 上传图片的审核方式。`none` 不审核，检查时给出警告 |
+| `OUTPUT_MODERATION` | `frames`、`off`、`mock` | 否（缺省按 `off`） | 成片输出审核：成片存进 R2 后、标记 `succeeded` 前，用 Cloudflare Media Transformations 抽 3 帧（1 秒、中点、80% 处，不足 3 秒只取中点；长边缩到 768）逐帧交给 `MODERATION_PROVIDER`，任一帧不通过就删掉成片、判失败并退积分（`error_code = output_moderation_rejected`）；审核服务不可用时抛错交给队列重试。`off` 不审核，`MODERATION_PROVIDER` 不是 `none` 时检查给出警告；`MODERATION_PROVIDER=none` 时 `frames` 也不审核（日志警告）。`mock` 只在非 production 可用，按生成请求的 `mockOutcome: 'output_reject'` 判拒（本地 dev 和 e2e 用）。**`frames` 需要绑定**：在 `wrangler.jsonc`（预发还有 `wrangler.staging.jsonc`）加 `"media": { "binding": "MEDIA_TRANSFORM" }`（绑定名不能用 `MEDIA`，已被 R2 占用）。模板默认不声明：Media 绑定在本地 dev 只有 remote 模式，每次启动都会连 Cloudflare（要登录、可能计费），没有凭据的 CI 起不来。`frames` 但没绑定时检查报错。输入限制：成片小于 100 MB、不超过 10 分钟，见 [官方文档](https://developers.cloudflare.com/stream/transform-videos/bindings/) |
 | `GOOGLE_CLIENT_ID` | OAuth Client ID | 是 | 站点只有 Google 登录，留空就没人能登录 |
 | `UMAMI_ORIGIN` | 不带路径的 https 地址，如 `https://umami.example.com` | 否 | Umami 实例地址，留空则不代理。只在 Worker 端使用（`/s/script.js`、`/s/api/send` 同域代理），不进前端，页面源码里看不到实例域名；格式不对时检查给出警告。实例要带 GeoLite2 数据库（Vercel 上部署时设 `BUILD_GEO=1` 再重新部署）：代理把访客 IP 放进 `payload.ip`，Umami 据此查国家，没有数据库会返回 500。只有 `APP_ENV=production` 才转发上报和取脚本（其它环境 `/s/script.js` 返回空 JS），`/admin` 页面不转发 |
 | `TURNSTILE_SITE_KEY` | 站点密钥 | 否 | 留空则留言和举报表单不做人机校验，检查时给出警告 |
@@ -60,9 +61,11 @@
 - `packages`：积分包。`id` 要在 `*_PRODUCTS` 里有对应的商品，页面上的价格要和支付商后台一致。
 - `subscriptionsEnabled`、`plans`：订阅开关和套餐（`interval` 为 `month` 或 `year`，`credits` 是每月发放量）。套餐同样要在 `*_PRODUCTS` 里有商品；不卖订阅时把开关设为 `false`。用法见 [subscriptions.md](subscriptions.md)，入账规则见 [payments.md](payments.md) 的“订阅”。
 - `video`：模型、源视频帧率和每视频秒的成本，用于估算毛利。
-- `analytics.clarityId`：Microsoft Clarity 项目 ID，空值关闭。官方代码写入 `<head>`，仅正式域名及子域加载；同时按配置开放 CSP 来源。不受 GA4 同意横幅控制，地区同意管理需在 Clarity 与相应同意方案中配置。
-- `analytics.ga4Id`、`analytics.cfBeaconToken`、`analytics.umamiWebsiteId`：统计。`umamiWebsiteId` 配合 `UMAMI_ORIGIN` 使用，同域代理、不写 Cookie、不受横幅控制。只有填了 `ga4Id` 才会显示 Cookie 同意横幅，此时归因 Cookie `vt_attr` 也等访客同意后才写入。
+- `analytics.ga4Id`、`analytics.cfBeaconToken`、`analytics.umamiWebsiteId`、`analytics.clarityId`：统计。`umamiWebsiteId` 配合 `UMAMI_ORIGIN` 使用，同域代理、不写 Cookie、不受横幅控制。`clarityId` 是 Microsoft Clarity 项目 ID，只在正式域名加载，未同意时无 Cookie 录制。填了 `ga4Id` 或 `clarityId` 才启用 Cookie 同意：欧洲经济区、英国、瑞士和无法判断国家的访客默认关闭并弹横幅，其他地区默认开启、可在页脚“Cookie 设置”里拒绝（按 `cf-ipcountry` 判断，见 `src/lib/consent.ts`）；归因 Cookie `vt_attr` 跟随同一个同意状态。
 - `share.enabled`：成片公开分享页，默认开启。换脸、真人类站点风险高时设为 `false`，个人中心的分享按钮和 `/v/<id>` 页面都不出现。
+- `aiMetadata.enabled`：成片 XMP 机器可读 AI 标记和 `/verify` 验证页，默认关闭。开启后成片写入 XMP、页脚和 sitemap 出现 `/verify`、服务条款提到元数据；关闭时页面和 `GET /api/verify/:id` 返回 404。面向欧盟用户的站点建议开启。
+- `fraudWarningAutoRefund`：Stripe 欺诈预警（actionable）时是否自动全额退款并立即回收剩余积分（同时取消关联活跃订阅），默认开启；设为 `false` 时只通知管理员，由管理员在后台退款。
+- `cspReportOnly`：CSP 响应头是否仅上报（`Content-Security-Policy-Report-Only`），默认开启；线上观察 `[csp]` 日志无误报后设为 `false` 即强制执行 `Content-Security-Policy`。
 - `seo.googleVerification`、`seo.bingVerification`、`seo.indexNowKey`：站长验证和 IndexNow。用 `new-site.mjs` 派生新站时会被清空。
 
 ## 仅脚本和测试使用的变量

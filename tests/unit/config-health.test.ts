@@ -1,10 +1,11 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { REQUIRED_BINDINGS, checkConfig, type ConfigInput } from '#/server/config-health'
 import { sellingPlans, site } from '#/config/site'
-import { configBindings, findSiteTodos, parsePendingMigrations, parseSecretNames, readWranglerConfig, runDoctor } from '../../scripts/doctor.mjs'
+import { configBindings, findDirtyFiles, findSiteTodos, parsePendingMigrations, parseSecretNames, readWranglerConfig, runDoctor } from '../../scripts/doctor.mjs'
 
 const SECRET = 'a'.repeat(64)
 
@@ -17,6 +18,7 @@ function ready(overrides: { vars?: Record<string, string>; secrets?: ConfigInput
       PAYMENT_PROVIDER: 'waffo',
       VIDEO_PROVIDER: 'fal',
       MODERATION_PROVIDER: 'openai',
+      OUTPUT_MODERATION: 'frames',
       ADMIN_EMAILS: 'ops@moonhop.ai',
       EMAIL_FROM: 'noreply@mail.moonhop.ai',
       WAFFO_ENVIRONMENT: 'prod',
@@ -36,7 +38,7 @@ function ready(overrides: { vars?: Record<string, string>; secrets?: ConfigInput
       RESEND_API_KEY: 're_x',
       ...overrides.secrets,
     },
-    bindings: REQUIRED_BINDINGS,
+    bindings: [...REQUIRED_BINDINGS, 'MEDIA_TRANSFORM'],
     packageIds: ['starter', 'party'],
     siteDomain: 'moonhop.ai',
   }
@@ -48,6 +50,15 @@ describe('checkConfig', () => {
   it('完整的生产配置没有任何报告；www 子域名和发信子域名算同一站点', () => {
     expect(checkConfig(ready())).toEqual([])
     expect(checkConfig(ready({ vars: { SITE_URL: 'https://www.moonhop.ai' } }))).toEqual([])
+  })
+
+  it('风格指定的视频服务商要有各自的密钥；和 VIDEO_PROVIDER 相同的不重复报，未知的报错', () => {
+    const withStyles = (styleProviders: string[], secrets: ConfigInput['secrets'] = {}) => ({ ...ready({ secrets }), styleProviders })
+    expect(keys(withStyles(['fal']))).toEqual([])
+    expect(keys(withStyles(['nanoapi']))).toEqual(['error:NANOAPI_API_KEY'])
+    expect(checkConfig(withStyles(['nanoapi', 'nanoapi']))).toEqual([expect.objectContaining({ key: 'NANOAPI_API_KEY', message: expect.stringContaining('风格指定') })])
+    expect(keys(withStyles(['nanoapi'], { NANOAPI_API_KEY: 'n' }))).toEqual([])
+    expect(keys(withStyles(['bogus']))).toEqual(['error:styleProviders'])
   })
 
   it('只要求所选服务商的密钥；运行时能看到值时拦截弱 SESSION_SECRET，doctor 只核对名字', () => {
@@ -73,6 +84,18 @@ describe('checkConfig', () => {
       vars: { APP_ENV: 'development', SITE_URL: 'http://localhost:3000', PAYMENT_PROVIDER: 'mock', VIDEO_PROVIDER: 'mock', MODERATION_PROVIDER: 'mock' },
     })
     expect(keys(input)).toEqual(['error:APP_ENV', 'error:SITE_URL', 'error:PAYMENT_PROVIDER', 'error:VIDEO_PROVIDER', 'error:MODERATION_PROVIDER'])
+  })
+
+  it('成片输出审核：frames 要有 MEDIA_TRANSFORM 绑定；off 在有输入审核时警告；mock 和未知值报错', () => {
+    expect(checkConfig({ ...ready(), bindings: REQUIRED_BINDINGS })).toEqual([expect.objectContaining({ level: 'error', key: 'OUTPUT_MODERATION', message: expect.stringContaining('MEDIA_TRANSFORM') })])
+    expect(keys(ready({ vars: { OUTPUT_MODERATION: 'off' } }))).toEqual(['warn:OUTPUT_MODERATION'])
+    // 没配置等同 off（合并模板前的站点）
+    expect(keys(ready({ vars: { OUTPUT_MODERATION: '' } }))).toEqual(['warn:OUTPUT_MODERATION'])
+    // 输入审核本来就是 none 时，off 不再重复警告
+    expect(keys(ready({ vars: { OUTPUT_MODERATION: 'off', MODERATION_PROVIDER: 'none' } }))).toEqual(['warn:MODERATION_PROVIDER'])
+    expect(keys(ready({ vars: { MODERATION_PROVIDER: 'none' } }))).toEqual(['warn:MODERATION_PROVIDER', 'warn:OUTPUT_MODERATION'])
+    expect(keys(ready({ vars: { OUTPUT_MODERATION: 'mock' } }))).toEqual(['error:OUTPUT_MODERATION'])
+    expect(keys(ready({ vars: { OUTPUT_MODERATION: 'all' } }))).toEqual(['error:OUTPUT_MODERATION'])
   })
 
   it('商品映射缺包或不是 JSON 对象、生产仍用 test 店铺、预发用正式店铺', () => {
@@ -126,7 +149,7 @@ describe('checkConfig', () => {
       'error:EMAIL_FROM',
     ])
     expect(keys(ready({ vars: { ADMIN_EMAILS: ' , ', EMAIL_FROM: 'noreply@other.ai' } }))).toEqual(['error:ADMIN_EMAILS', 'warn:EMAIL_FROM'])
-    expect(checkConfig({ ...ready(), bindings: ['DB', 'MEDIA'] })).toEqual([
+    expect(checkConfig({ ...ready(), bindings: ['DB', 'MEDIA', 'MEDIA_TRANSFORM'] })).toEqual([
       expect.objectContaining({ key: 'bindings', message: expect.stringContaining('KV、VIDEO_QUEUE') }),
     ])
   })
@@ -177,10 +200,12 @@ describe('doctor', () => {
     kv_namespaces: [{ binding: 'KV', id: '9f8e7d6c5b4a39281706f5e4d3c2b1a0' }],
     routes: [{ pattern: 'moonhop.ai', custom_domain: true }],
     workers_dev: false,
+    // 模板默认不声明 Media 绑定；这里模拟站点启用了 OUTPUT_MODERATION=frames
+    media: { binding: 'MEDIA_TRANSFORM' },
   })
   const allSecrets = Object.keys(ready().secrets)
   const doctorKeys = (config: Record<string, any>, options: Parameters<typeof runDoctor>[1] = {}) =>
-    runDoctor(config, { secretNames: allSecrets, pendingMigrations: [], siteDomain: 'moonhop.ai', seatStyles: [], ...options }).map((i) => `${i.level}:${i.key}`)
+    runDoctor(config, { secretNames: allSecrets, pendingMigrations: [], siteDomain: 'moonhop.ai', seatStyles: [], styleProviders: [], ...options }).map((i) => `${i.level}:${i.key}`)
 
   it('可上线的配置通过；缺 secret、未应用 migration、查询失败都报错', () => {
     expect(doctorKeys(deployable())).toEqual([])
@@ -229,5 +254,29 @@ describe('doctor', () => {
     expect(doctorKeys(deployable(), { siteTodos: todos })).toEqual(['error:site-todo'])
     const staging = { ...deployable(), vars: { ...deployable().vars, APP_ENV: 'staging' } }
     expect(doctorKeys(staging, { siteTodos: todos })).toContain('warn:site-todo')
+  })
+
+  it('未提交改动：production 报错阻断，非 production 与 git 不可用时提醒；findDirtyFiles 识别脏树', () => {
+    expect(doctorKeys(deployable(), { dirtyFiles: [' M src/server/app.ts'] })).toEqual(['error:dirty-worktree'])
+    const staging = { ...deployable(), vars: { ...deployable().vars, APP_ENV: 'staging' } }
+    expect(doctorKeys(staging, { dirtyFiles: [' M src/server/app.ts'] })).toContain('warn:dirty-worktree')
+    expect(doctorKeys(deployable(), { dirtyFiles: null })).toEqual(['warn:dirty-worktree'])
+
+    const nonGit = mkdtempSync(join(tmpdir(), 'doctor-nongit-'))
+    const repo = mkdtempSync(join(tmpdir(), 'doctor-git-'))
+    try {
+      expect(findDirtyFiles(nonGit)).toBeNull()
+      execFileSync('git', ['init'], { cwd: repo })
+      execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: repo })
+      execFileSync('git', ['config', 'user.name', 'Test'], { cwd: repo })
+      writeFileSync(join(repo, 'a.txt'), 'v1\n')
+      expect(findDirtyFiles(repo)).toEqual(['?? a.txt'])
+      execFileSync('git', ['add', 'a.txt'], { cwd: repo })
+      execFileSync('git', ['commit', '-m', 'init'], { cwd: repo })
+      expect(findDirtyFiles(repo)).toEqual([])
+    } finally {
+      rmSync(nonGit, { recursive: true, force: true })
+      rmSync(repo, { recursive: true, force: true })
+    }
   })
 })

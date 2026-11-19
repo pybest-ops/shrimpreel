@@ -1,10 +1,11 @@
 import { findPlan, site } from '#/config/site'
 import { alignSubscriptionGrantStatement, clawbackStatements, ledgerStatements } from './credits'
-import { notifyOrderPaid } from './notifications'
+import { notifyDispute, notifyOrderPaid } from './notifications'
+import { getOrderProvider } from './payments'
 import { referralClawbackStatements, referralRewardStatements } from './referrals'
 import { getSettings } from './settings'
 import { addInterval, grantWindow, nextGrantAt } from './subscriptions'
-import type { PaidEvent, PaymentEvent, PaymentProviderId, SubscriptionCharge, SubscriptionEvent } from './payments/types'
+import type { DisputeEvent, PaidEvent, PaymentEvent, PaymentProvider, PaymentProviderId, SubscriptionCharge, SubscriptionEvent } from './payments/types'
 import type { OrderRow, SubscriptionRow } from './types'
 import { ApiError, createId, isCheckConstraintError, isUniqueConstraintError, nowIso, parseJsonRecord, sha256Hex } from './util'
 
@@ -14,6 +15,7 @@ export type FulfillmentResult = {
   status: 'processed' | 'duplicate' | 'ignored' | 'orphan' | 'mismatch'
   orderId: string | null
   note?: string
+  credits?: number // 争议：本次回收（opened）或补回（won、closed）的积分
 }
 type EventStatus = 'processed' | 'ignored' | 'failed' | 'orphan' | 'mismatch'
 
@@ -42,7 +44,30 @@ export async function processPaymentEvent(
   }
   const status: EventStatus = result.status === 'duplicate' ? 'processed' : result.status
   await recordEvent(db, provider, event, result.orderId, status, result.note ?? null, rawPayload)
-  if (event.kind === 'paid' && result.status === 'processed' && result.orderId) await notifyOrderPaid(env, result.orderId)
+  if (result.status === 'processed' && result.orderId) {
+    if (event.kind === 'paid') await notifyOrderPaid(env, result.orderId)
+    else if (event.kind === 'disputed') {
+      await notifyDispute(env, {
+        orderId: result.orderId,
+        stage: event.stage,
+        key: event.disputeId,
+        credits: result.credits ?? 0,
+        amountCents: event.amountCents,
+        reason: event.reason,
+        detail: result.note ?? null,
+      })
+    } else if (event.kind === 'fraud_warning') {
+      await notifyDispute(env, {
+        orderId: result.orderId,
+        stage: 'fraud_warning',
+        key: event.providerPaymentId ?? event.eventId,
+        credits: 0,
+        amountCents: null,
+        reason: null,
+        detail: result.note ?? null,
+      })
+    }
+  }
   return result
 }
 
@@ -59,6 +84,9 @@ async function applyEvent(env: Env, provider: PaymentProviderId, event: PaymentE
     if (event.site && event.site !== site.domain) return { status: 'ignored', orderId: null, note: `order of another site: ${event.site}` }
     return { status: 'orphan', orderId: null, note: 'order not found' }
   }
+
+  if (event.kind === 'disputed') return applyDispute(env, order, event)
+  if (event.kind === 'fraud_warning') return applyFraudWarning(env, order)
 
   if (event.kind === 'paid') {
     if (order.status === 'paid' || order.status === 'refunded') return { status: 'duplicate', orderId: order.id }
@@ -144,6 +172,216 @@ async function applyEvent(env: Env, provider: PaymentProviderId, event: PaymentE
     .bind(nowIso(), order.id)
     .run()
   return { status: 'processed', orderId: order.id }
+}
+
+// 争议（拒付）。积分：opened 时立即回收订单剩余未退的积分（幂等键 dispute:<争议号>，最多扣到 0），实际回收量记在
+// dispute_credits 并计入 refunded_credits（之后的退款不会再回收同一批积分）；
+// won / closed（资金留在商户）补回 dispute_credits（幂等键 dispute_won:<争议号>）并从 refunded_credits 减去；
+// lost 订单记为全额退款，积分在 opened 时已回收，不再二次回收。
+// 事件乱序：lost 先于 opened 到达时，在同一个 batch 里先回收再记为败诉；opened 晚于 won / lost 到达时当作重复。
+async function applyDispute(env: Env, order: OrderRow, event: DisputeEvent): Promise<FulfillmentResult> {
+  const db = env.DB
+  if (order.status !== 'paid' && order.status !== 'refunded') {
+    // 金额、商品不符没有入账的付款：积分本来就没发，不处理
+    const unfulfilled = await db
+      .prepare(`SELECT 1 FROM payment_events WHERE order_id = ? AND status = 'mismatch' LIMIT 1`)
+      .bind(order.id)
+      .first()
+    if (unfulfilled) return { status: 'ignored', orderId: order.id, note: 'dispute of unfulfilled mismatch payment' }
+    // 争议事件先于付款事件到达：同退款，记为 failed 返回 5xx，等支付商重试
+    throw new Error(`dispute before payment: order ${order.id} is ${order.status}`)
+  }
+  const same = order.dispute_id === event.disputeId
+  if (same && (event.stage === 'opened' || order.dispute_status === event.stage || (event.stage === 'closed' && order.dispute_status === 'won'))) {
+    return { status: 'duplicate', orderId: order.id }
+  }
+  // 一张订单只跟踪一个争议：别的争议还在处理中，或订单已因败诉全额退款时，这个事件只留记录和告警
+  if (!same && (order.dispute_status === 'open' || order.dispute_status === 'lost')) {
+    return { status: 'ignored', orderId: order.id, note: `order has dispute ${order.dispute_id} (${order.dispute_status})` }
+  }
+  const now = nowIso()
+  try {
+    if (event.stage === 'opened') {
+      await db.batch(disputeOpenStatements(db, order, event, now))
+      return { status: 'processed', orderId: order.id, credits: await disputeCredits(db, event.disputeId) }
+    }
+    if (event.stage === 'lost') {
+      if (same && order.dispute_status === 'won') return { status: 'ignored', orderId: order.id, note: 'dispute already won' }
+      const referral = await referralClawbackStatements(db, order, now)
+      await batchWithOptional(
+        db,
+        [
+          ...(same ? [] : disputeOpenStatements(db, order, event, now)),
+          // 订单记为全额退款；之前部分退过款的，退款金额补到实收
+          db
+            .prepare(
+              `UPDATE orders SET status = 'refunded', refunded_amount_cents = COALESCE(paid_amount_cents, amount_cents),
+               refunded_at = ?1, updated_at = ?1 WHERE id = ?2 AND status = 'paid'`,
+            )
+            .bind(now, order.id),
+          db.prepare(`UPDATE orders SET dispute_status = 'lost', updated_at = ? WHERE id = ?`).bind(now, order.id),
+        ],
+        referral,
+      )
+      return { status: 'processed', orderId: order.id }
+    }
+    // won / closed：补回积分。只在订单仍是 paid 且没退过款时补（已退款的钱已经给了买家，不能再给积分）；
+    // 订阅积分按期作废，补回的积分沿用原批次的到期时间，已过期就不补
+    if (order.dispute_status === 'lost') return { status: 'ignored', orderId: order.id, note: 'dispute already lost' }
+    let restore = same && order.dispute_status === 'open' && order.dispute_credits > 0 && order.status === 'paid' && order.refunded_amount_cents === 0 ? order.dispute_credits : 0
+    let expiresAt: string | null = null
+    if (restore > 0 && order.subscription_id) {
+      expiresAt = await db
+        .prepare(`SELECT MAX(expires_at) AS expires_at FROM credit_grants WHERE ref_id = ? AND source = 'subscription'`)
+        .bind(order.id)
+        .first<string>('expires_at')
+      if (!expiresAt || expiresAt <= now) restore = 0
+    }
+    await db.batch([
+      ...(restore > 0
+        ? ledgerStatements(db, {
+            userId: order.user_id,
+            delta: restore,
+            reason: 'dispute_won',
+            refId: order.id,
+            idempotencyKey: `dispute_won:${event.disputeId}`,
+            note: `dispute ${event.stage} ${event.disputeId}`,
+            expiresAt,
+          })
+        : []),
+      // 没见过 opened 事件（丢失或乱序）时直接记下争议，没有积分可补
+      db
+        .prepare(
+          `UPDATE orders SET refunded_credits = refunded_credits - ?1, dispute_id = ?2, dispute_status = 'won',
+           disputed_at = COALESCE(disputed_at, ?3), updated_at = ?3
+           WHERE id = ?4 AND (dispute_status IS NULL OR dispute_status != 'lost') AND (dispute_status != 'open' OR dispute_id = ?2 OR dispute_id IS NULL)`,
+        )
+        .bind(restore, event.disputeId, now, order.id),
+      db.prepare('INSERT INTO credit_guard (ok) SELECT changes() = 1'),
+      db.prepare('DELETE FROM credit_guard'),
+    ])
+    return { status: 'processed', orderId: order.id, credits: restore }
+  } catch (error) {
+    // 幂等键冲突：同一争议的积分变动已经落库（并发重复投递）
+    if (isUniqueConstraintError(error) || isCheckConstraintError(error)) return { status: 'duplicate', orderId: order.id }
+    throw error
+  }
+}
+
+// 争议开启：回收订单剩余未退的积分，记下争议。没有可回收的积分（已退光）时只记争议
+function disputeOpenStatements(db: D1Database, order: OrderRow, event: DisputeEvent, now: string): D1PreparedStatement[] {
+  const key = `dispute:${event.disputeId}`
+  const remaining = Math.max(0, order.credits - order.refunded_credits)
+  const clawed = `COALESCE((SELECT -delta FROM credit_ledger WHERE idempotency_key = ?1), 0)`
+  return [
+    ...(remaining > 0
+      ? clawbackStatements(db, {
+          userId: order.user_id,
+          maxAmount: remaining,
+          reason: 'dispute',
+          refId: order.id,
+          idempotencyKey: key,
+          preferRefId: order.id,
+          // 订阅积分按期作废，只回收这张订单发的批次，不扣用户另买的积分包
+          onlyPreferred: !!order.subscription_id,
+          note: `dispute ${event.disputeId}`,
+        })
+      : []),
+    db
+      .prepare(
+        `UPDATE orders SET dispute_id = ?2, dispute_status = 'open', disputed_at = ?3, dispute_credits = ${clawed},
+         refunded_credits = refunded_credits + ${clawed}, updated_at = ?3 WHERE id = ?4`,
+      )
+      .bind(key, event.disputeId, now, order.id),
+  ]
+}
+
+async function disputeCredits(db: D1Database, disputeId: string) {
+  const delta = await db.prepare('SELECT delta FROM credit_ledger WHERE idempotency_key = ?').bind(`dispute:${disputeId}`).first<number>('delta')
+  return delta ? -delta : 0
+}
+
+// 发卡行欺诈预警：还没有拒付，主动全额退剩余金额可以避免拒付（并且不计入拒付率）。
+async function tryCancelProviderSubscription(
+  db: D1Database,
+  provider: PaymentProvider | null,
+  userId: string,
+  ref: { providerSubscriptionId: string; providerCustomerId: string | null },
+  context: string,
+) {
+  if (!provider?.cancelSubscription) return
+  try {
+    const user = await db.prepare('SELECT email FROM users WHERE id = ?').bind(userId).first<{ email: string }>()
+    await provider.cancelSubscription({
+      providerSubscriptionId: ref.providerSubscriptionId,
+      providerCustomerId: ref.providerCustomerId,
+      user: { id: userId, email: user?.email ?? '' },
+    })
+  } catch (error) {
+    console.warn(context, {
+      userId,
+      providerSubscriptionId: ref.providerSubscriptionId,
+      error: error instanceof Error ? error.message : String(error),
+    })
+  }
+}
+
+// 默认开启自动全额退款并立即回收剩余积分，避免欺诈用户继续消费或后续升级成拒付；关闭时仅通知管理员。
+// 若关联活跃订阅则同步取消并停发后续分期积分；退不了（已退、已拒付、超出期限、没有 API）时告警
+async function applyFraudWarning(env: Env, order: OrderRow): Promise<FulfillmentResult> {
+  if (order.status !== 'paid') return { status: 'ignored', orderId: order.id, note: `order is ${order.status}` }
+  if (order.dispute_status === 'open') return { status: 'ignored', orderId: order.id, note: 'dispute already open' }
+  const remaining = Math.max(0, (order.paid_amount_cents ?? order.amount_cents) - order.refunded_amount_cents)
+  if (remaining <= 0) return { status: 'ignored', orderId: order.id, note: 'nothing left to refund' }
+  if (!site.fraudWarningAutoRefund) return { status: 'processed', orderId: order.id, note: '未自动退款，请到后台核对后退款' }
+  const provider = getOrderProvider(env, order.provider)
+  if (!provider?.refund) return { status: 'processed', orderId: order.id, note: '该支付商没有退款 API，请到支付商后台手动退款' }
+  try {
+    if (!order.provider_payment_id) throw new ApiError(409, 'missing_provider_payment')
+    assertProviderRefundAllowed(order)
+    const result = await provider.refund({
+      orderId: order.id,
+      packageId: order.package_id,
+      providerPaymentId: order.provider_payment_id,
+      amountCents: remaining,
+      fullAmount: true,
+      currency: order.paid_currency ?? order.currency,
+      reason: 'early fraud warning',
+    })
+    if (order.subscription_id) {
+      const sub = await env.DB.prepare('SELECT * FROM subscriptions WHERE id = ?').bind(order.subscription_id).first<SubscriptionRow>()
+      if (sub && sub.status !== 'canceled' && sub.status !== 'expired') {
+        const now = nowIso()
+        await env.DB
+          .prepare('UPDATE subscriptions SET cancel_at_period_end = 1, next_grant_at = NULL, state_at = ?, updated_at = ? WHERE id = ?')
+          .bind(now, now, sub.id)
+          .run()
+        await tryCancelProviderSubscription(
+          env.DB,
+          provider,
+          order.user_id,
+          { providerSubscriptionId: sub.provider_subscription_id, providerCustomerId: sub.provider_customer_id },
+          'cancel subscription after fraud warning failed',
+        )
+      }
+    }
+    await refundOrder(env.DB, order, {
+      refundKey: result.refundId ?? `efw:${order.id}`,
+      amountCents: remaining,
+      note: 'early fraud warning',
+    })
+    return {
+      status: 'processed',
+      orderId: order.id,
+      note: `已自动提交全额退款${result.refundId ? ` ${result.refundId}` : ''}（${result.status}）并立即回收剩余积分`,
+    }
+  } catch (error) {
+    // 业务冲突不重试（重试也一样），原因写进告警；其他错误（网络、支付商 5xx）抛出，让支付商重试 webhook
+    if (error instanceof ApiError && error.status === 409) {
+      return { status: 'processed', orderId: order.id, note: `自动退款失败（${error.message}），请到支付商后台处理` }
+    }
+    throw error
+  }
 }
 
 // 入账前核对 paid 事件和订单，返回不一致的原因，null 表示通过。只拦“买错商品”和“少付”：
@@ -243,6 +481,14 @@ async function applySubscriptionStart(
   const subscriptionId = createId('sub')
   const referral = await referralRewardStatements(db, order, (await getSettings(env)).referralRewardCredits, now)
   const statements = [
+    // 终止 webhook 丢失时，先将已到期结束的取消态旧订阅置为 expired，避免 idx_subscriptions_one_live 阻塞正常重订
+    db
+      .prepare(
+        `UPDATE subscriptions
+         SET status = 'expired', ended_at = COALESCE(ended_at, current_period_end), next_grant_at = NULL, updated_at = ?
+         WHERE user_id = ? AND status IN ('active', 'past_due') AND cancel_at_period_end = 1 AND current_period_end IS NOT NULL AND current_period_end <= ?`,
+      )
+      .bind(now, order.user_id, now),
     ...ledgerStatements(db, {
       userId: order.user_id,
       delta: order.credits,
@@ -297,8 +543,42 @@ async function applySubscriptionStart(
   try {
     await batchWithOptional(db, statements, referral)
   } catch (error) {
-    if (isUniqueConstraintError(error)) return { status: 'duplicate', orderId: order.id }
-    throw error
+    if (!isUniqueConstraintError(error)) throw error
+    // 区分幂等重放（同单已入账或同 provider_subscription_id 已入库）与同用户并发双开冲突（idx_subscriptions_one_live）
+    const freshOrder = await db.prepare('SELECT status FROM orders WHERE id = ?').bind(order.id).first<{ status: string }>()
+    const existingSub = await findSubscription(db, provider, charge.providerSubscriptionId)
+    if (existingSub || freshOrder?.status === 'paid' || freshOrder?.status === 'refunded') {
+      return { status: 'duplicate', orderId: order.id }
+    }
+    await markMismatch(db, order.id, event, now)
+    const providerClient = getOrderProvider(env, provider)
+    await tryCancelProviderSubscription(
+      db,
+      providerClient,
+      order.user_id,
+      { providerSubscriptionId: charge.providerSubscriptionId, providerCustomerId: charge.providerCustomerId ?? null },
+      'cancel duplicate subscription failed',
+    )
+    if (providerClient?.refund && event.providerPaymentId) {
+      try {
+        await providerClient.refund({
+          orderId: order.id,
+          packageId: order.package_id,
+          providerPaymentId: event.providerPaymentId,
+          amountCents: event.paidAmountCents ?? order.amount_cents,
+          fullAmount: true,
+          currency: event.paidCurrency ?? order.currency,
+          reason: 'duplicate live subscription',
+        })
+      } catch (refundError) {
+        console.warn('refund duplicate subscription failed', {
+          orderId: order.id,
+          providerPaymentId: event.providerPaymentId,
+          error: refundError instanceof Error ? refundError.message : String(refundError),
+        })
+      }
+    }
+    return { status: 'mismatch', orderId: order.id, note: 'duplicate live subscription for user' }
   }
   return { status: 'processed', orderId: order.id }
 }
@@ -571,7 +851,7 @@ export function planRefund(order: RefundableOrder, refund: Pick<RefundInput, 'am
 
 async function findOrder(db: D1Database, provider: PaymentProviderId, event: Exclude<PaymentEvent, { kind: 'ignored' | 'subscription' }>) {
   // 订阅续费的退款事件里 orderId 仍是首单号（checkout 元数据跟着订阅走），先按支付号找到具体那一期的订单
-  if (event.kind === 'refunded' && event.providerPaymentId) {
+  if ((event.kind === 'refunded' || event.kind === 'disputed' || event.kind === 'fraud_warning') && event.providerPaymentId) {
     const order = await db
       .prepare('SELECT * FROM orders WHERE provider = ? AND provider_payment_id = ?')
       .bind(provider, event.providerPaymentId)
@@ -593,9 +873,15 @@ async function findOrder(db: D1Database, provider: PaymentProviderId, event: Exc
     if (order) return order
   }
   if (event.kind === 'paid' && event.providerOrderId) {
+    // 拆成两条等价分支并用 UNION ALL 合并：分别命中 (provider, provider_session_id) 与 (provider, provider_order_id) 部分索引，避免 OR 回退全扫描
     return db
-      .prepare('SELECT * FROM orders WHERE provider = ? AND (provider_session_id = ? OR provider_order_id = ?)')
-      .bind(provider, event.providerOrderId, event.providerOrderId)
+      .prepare(
+        `SELECT * FROM orders WHERE provider = ? AND provider_session_id = ?
+         UNION ALL
+         SELECT * FROM orders WHERE provider = ? AND provider_order_id = ? AND COALESCE(provider_session_id, '') != ?
+         LIMIT 1`,
+      )
+      .bind(provider, event.providerOrderId, provider, event.providerOrderId, event.providerOrderId)
       .first<OrderRow>()
   }
   return null

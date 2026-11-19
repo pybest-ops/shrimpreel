@@ -1,8 +1,13 @@
 import { createRouter } from '@tanstack/react-router'
 import { getGlobalStartContext } from '@tanstack/react-start'
 import { loadContent, localeFromPathname } from './lib/i18n'
+import { installTranslateGuard } from './lib/translate-guard'
 import { routeTree } from './routeTree.gen'
+import type { Consent } from './lib/consent'
 import type { ShareView } from './server/shares'
+
+// 浏览器整页翻译会改 DOM，React 再更新时会崩到错误页：水合前装上防护（lib/translate-guard.ts）
+if (typeof window !== 'undefined') installTranslateGuard()
 
 // 浏览器首屏：尽早开始下载当前语言的文案，和路由 chunk 并行（见 lib/i18n.ts）
 const initialContent = typeof window === 'undefined' ? null : loadContent(localeFromPathname(window.location.pathname))
@@ -27,6 +32,7 @@ declare module '@tanstack/react-router' {
   interface Register {
     router: ReturnType<typeof getRouter>
     // share：分享页 /v/<id> 的数据，src/server.ts 渲染前查好（见 routes/{-$locale}/v.$shareId.tsx）
-    server: { requestContext: { nonce: string; share?: ShareView } }
+    // consentDefault：按访客国家算出的统计 Cookie 默认值，写在 <html data-consent-default> 上（见 lib/consent.ts）
+    server: { requestContext: { nonce: string; share?: ShareView; consentDefault?: Consent } }
   }
 }

@@ -50,6 +50,10 @@ export interface OrderRow {
   updated_at: string
   last_reconciled_at: string | null
   subscription_id: string | null // 订阅扣款订单所属的订阅
+  dispute_id: string | null // 最近一次争议（拒付）的支付商编号
+  dispute_status: 'open' | 'won' | 'lost' | null
+  dispute_credits: number // 争议开启时实际回收的积分（已计入 refunded_credits）
+  disputed_at: string | null
 }
 
 export interface SubscriptionRow {
@@ -84,6 +88,7 @@ export interface GenerationRow {
   duration_seconds: number
   credits_cost: number
   upload_id: string
+  second_upload_id: string | null
   status: 'queued' | 'processing' | 'succeeded' | 'failed'
   provider: string
   provider_request_id: string | null
@@ -103,6 +108,8 @@ export interface GenerationRow {
   share_id: string | null
   share_poster_key: string | null
   shared_at: string | null
+  consent_at: string | null // 生成时用户勾选同意的时间（旧数据为空）
+  consent_text: string | null // 当时服务端取的同意文案原文
 }
 
 export interface UploadRow {
@@ -133,6 +140,7 @@ export interface TakedownRow {
   resolution_note: string | null
   locale: string | null // 举报人提交时的界面语言
   reminder_stage: number // 0 未提醒，1 已提醒即将超时，2 已提醒超时
+  signature: string | null // 举报人的电子签名（旧数据为空）
   created_at: string
 }
 

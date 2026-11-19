@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import { HeadContent, Outlet, Scripts, createRootRoute, useRouterState, type ErrorComponentProps } from '@tanstack/react-router'
+import { getGlobalStartContext } from '@tanstack/react-start'
 import { useEffect, useState, type ReactNode } from 'react'
 import { ConsentBanner } from '#/components/ConsentBanner'
 import { Toaster } from '#/components/Toast'
@@ -7,8 +8,7 @@ import { Footer } from '#/components/Footer'
 import { Nav } from '#/components/Nav'
 import { LocalLink } from '#/components/ui'
 import { site } from '#/config/site'
-import { clarityBootstrapScript } from '#/lib/clarity'
-import { ga4BootstrapScript } from '#/lib/consent'
+import { CONSENT_REQUIRED, clarityBootstrapScript, consentDefault, ga4BootstrapScript, type Consent } from '#/lib/consent'
 import { installErrorReporting, reportClientError } from '#/lib/error-report'
 import { htmlLang, loadContent, localeFromPathname, useContent } from '#/lib/i18n'
 import { SessionProvider } from '#/lib/session'
@@ -22,8 +22,6 @@ const THEME_SCRIPT = `(function(){try{var t=localStorage.getItem('theme');if(!t)
 function headScripts() {
   const scripts: Array<Record<string, unknown>> = [{ children: THEME_SCRIPT }]
   const { clarityId, ga4Id, cfBeaconToken, umamiWebsiteId } = site.analytics
-  // Clarity 使用框架生成的 nonce，只在配置的正式域名上执行。
-  if (clarityId) scripts.push({ children: clarityBootstrapScript(clarityId, site.domain) })
   // GA4 要等访客在同意横幅点“接受”后才加载（见 lib/consent.ts）
   if (ga4Id) scripts.push({ children: ga4BootstrapScript(ga4Id) })
   if (cfBeaconToken) {
@@ -35,6 +33,8 @@ function headScripts() {
   }
   // Umami 经本站 /s/ 代理（见 server/umami.ts），无 Cookie，不等同意
   if (umamiWebsiteId) scripts.push({ src: '/s/script.js', defer: true, 'data-website-id': umamiWebsiteId })
+  // Clarity 录屏：未同意时无 Cookie 模式，只在正式域名上加载
+  if (clarityId) scripts.push({ children: clarityBootstrapScript(clarityId, site.domain) })
   return scripts
 }
 
@@ -71,11 +71,24 @@ export const Route = createRootRoute({
   errorComponent: ErrorPage,
 })
 
+// 统计 Cookie 的地区默认值：服务端取 src/server.ts 传入的请求上下文，客户端读回服务端写在 <html> 上的值，两边一致
+function pageConsentDefault(): Consent {
+  if (typeof document !== 'undefined') return consentDefault()
+  const context = getGlobalStartContext() as { consentDefault?: Consent } | undefined
+  return context?.consentDefault ?? 'denied'
+}
+
 function RootDocument({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
+  const [defaultConsent] = useState(pageConsentDefault)
   useEffect(installErrorReporting, [])
   return (
-    <html lang={htmlLang(localeFromPathname(pathname))} data-skin={site.theme} suppressHydrationWarning>
+    <html
+      lang={htmlLang(localeFromPathname(pathname))}
+      data-skin={site.theme}
+      data-consent-default={CONSENT_REQUIRED ? defaultConsent : undefined}
+      suppressHydrationWarning
+    >
       <head>
         <HeadContent />
       </head>
@@ -83,7 +96,7 @@ function RootDocument({ children }: { children: ReactNode }) {
         <SessionProvider>{children}</SessionProvider>
         {/* 全站轻提示（toast.warning 等） */}
         <Toaster />
-        {site.analytics.ga4Id ? <ConsentBanner ga4Id={site.analytics.ga4Id} /> : null}
+        {CONSENT_REQUIRED ? <ConsentBanner ga4Id={site.analytics.ga4Id} /> : null}
         <Scripts />
       </body>
     </html>

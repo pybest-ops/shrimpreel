@@ -1,5 +1,5 @@
-import { seatStyleIds, sellingPlans, site } from '#/config/site'
-import { REQUIRED_BINDINGS, checkConfig } from './config-health'
+import { STYLES, seatStyleIds, sellingPlans, site } from '#/config/site'
+import { OPTIONAL_BINDINGS, REQUIRED_BINDINGS, checkConfig } from './config-health'
 
 // 运行时配置检查：与部署前的 npm run doctor 同一套规则，按实际 env 检查（含 SESSION_SECRET 强度），只返回问题，不返回值。
 // paymentProvider 是后台“收款渠道”的覆盖值，按实际生效的支付商检查
@@ -9,10 +9,11 @@ export function configIssues(env: Env, paymentProvider?: string) {
   return checkConfig({
     vars: paymentProvider ? { ...strings, PAYMENT_PROVIDER: paymentProvider } : strings,
     secrets: strings,
-    bindings: REQUIRED_BINDINGS.filter((name) => record[name] != null),
+    bindings: [...REQUIRED_BINDINGS, ...OPTIONAL_BINDINGS].filter((name) => record[name] != null),
     packageIds: site.packages.map((p) => p.id),
     planIds: sellingPlans.map((p) => p.id),
     seatStyleIds,
+    styleProviders: STYLES.flatMap((s) => (s.provider ? [s.provider] : [])),
     siteDomain: site.domain,
   })
 }

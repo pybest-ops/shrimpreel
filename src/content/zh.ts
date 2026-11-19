@@ -19,6 +19,11 @@ export function zh(s: S): Content {
   const photoRetention = uploadDays > 0 ? `在上传 ${uploadDays} 天后自动删除` : '保留到你主动删除为止'
   const videoRetention = outputDays > 0 ? `在完成 ${outputDays} 天后自动删除` : '保留到你主动删除为止'
   const { clarityId, ga4Id, cfBeaconToken, umamiWebsiteId } = s.analytics
+  const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`
+  const cheapest = [...s.packages].sort((x, y) => x.priceCents - y.priceCents)[0]!
+  const typeNames: Record<string, string> = { 'image/jpeg': 'JPG', 'image/png': 'PNG', 'image/webp': 'WebP' }
+  const uploadTypes = s.upload.contentTypes.map((t) => typeNames[t] ?? t).join('、')
+  const uploadMb = Math.round(s.upload.maxBytes / 1024 / 1024)
   return {
     styles,
     meta: {
@@ -37,6 +42,8 @@ export function zh(s: S): Content {
       refundDescription: `${b} 在什么情况下退还积分或积分包费用、生成失败的积分如何自动退回，以及退款到账需要多久。`,
       reportTitle: `举报内容 – ${b}`,
       reportDescription: `如果 ${b} 生成的视频未经同意使用了你的形象、涉及未成年人或侵犯你的权利，请在此举报，我们会在 ${s.takedownSlaHours} 小时内处理。`,
+      verifyTitle: `验证视频是否由 ${b} 生成`,
+      verifyDescription: `检查一段视频是否由 ${b} 生成：选择文件，我们在你的浏览器里读取文件中的 AI 标识，再与我们的记录核对，文件不会被上传。`,
       ogImageAlt: `${b}：一张照片生成你的 ${k} 视频`,
       breadcrumbHome: '首页',
     },
@@ -74,6 +81,9 @@ export function zh(s: S): Content {
       dropHint: 'JPG、PNG 或 WebP · 不超过 10 MB',
       guidance: '最佳效果：单人、正对镜头、光线均匀、露出头部和肩膀。避免墨镜、口罩和重度滤镜。',
       change: '更换照片',
+      photoLeft: '左边的人',
+      photoRight: '右边的人',
+      duoGuidance: '这个视频里有两位舞者：每人一张照片，按他们站的位置分左右。',
       uploading: '上传中…',
       uploaded: '照片已就绪',
       stepStyle: '舞蹈风格',
@@ -108,6 +118,24 @@ export function zh(s: S): Content {
       makeAnother: '再做一个',
       aiNotice: '本视频由 AI 生成。分享时请保留标识，并注明是 AI 生成。',
       expiresOn: (date: string) => `请在 ${date} 前下载，之后视频会被自动删除。`,
+      draftKept: '登录后会保留你的照片和选择。',
+      guestPrice: (credits: number, price: string) => `这个视频需要 ${credits} 积分 · 积分包 ${price} 起`,
+      phoneOpen: '照片在手机里？扫码上传',
+      phoneTitle: '用手机上传',
+      phoneHelp: '用手机相机扫描二维码并打开链接，选择或拍摄一张照片。手机上不需要登录。',
+      phoneWaiting: '等待你的照片…',
+      phoneExpiresIn: (time: string) => `二维码 ${time} 后失效`,
+      phoneExpired: '二维码已过期。',
+      phoneRenew: '换一个二维码',
+      phoneCancel: '取消',
+      phoneLinkLabel: '或在手机上打开这个链接',
+    },
+    phoneUpload: {
+      title: '用手机上传',
+      noToken: '请在电脑上扫描页面里的二维码。',
+      choose: '选择或拍摄照片',
+      uploading: '正在传到电脑…',
+      done: '照片已传到电脑，可以关闭这个页面。',
     },
     madeWith: {
       eyebrow: `用 ${b} 制作`,
@@ -156,6 +184,20 @@ export function zh(s: S): Content {
         `${b} 是专门围绕这段视频打造的 AI 视频生成器。不用学动作、不用拍摄，上传一张照片，模型就会按原版的节奏和机位生成由你出演的版本。`,
       ],
       guide: `阅读完整的 ${k} 热门解读`,
+    },
+    specs: {
+      eyebrow: '一览',
+      title: `${b} 规格`,
+      rows: [
+        { label: '上传', value: `一张清晰的单人照片，${uploadTypes}，不超过 ${uploadMb} MB` },
+        { label: '风格', value: s.styles.map((style) => styles[style.id].name).join('、') },
+        { label: '视频时长', value: `${s.durations.map((d) => d.seconds).join('、')} 秒` },
+        { label: '成片', value: `竖屏 ${s.template.aspectRatio} MP4，无水印` },
+        { label: '价格', value: `1 积分 = 1 秒视频；积分包 ${usd(cheapest.priceCents)} 起（${cheapest.credits} 积分）` },
+        { label: '积分', value: subs ? '积分包永不过期；订阅积分在当月结束时作废' : '永不过期，无订阅' },
+        { label: '生成时间', value: '几分钟' },
+        { label: '生成失败', value: '自动退还积分' },
+      ],
     },
     features: {
       eyebrow: '功能',
@@ -260,12 +302,14 @@ export function zh(s: S): Content {
       terms: '服务条款',
       refund: '退款政策',
       report: '举报内容',
+      verify: '验证视频',
       rights: `© ${new Date().getFullYear()} ${b}。保留所有权利。`,
       agentDocs: 'AI 与 Agent 文档',
       askAi: `看看 ChatGPT、Claude、Perplexity、Gemini 和 Grok 怎么介绍 ${b}。`,
       askAiLabel: (ai: string) => `问 ${ai}：${b} 是什么`,
       askAiPrompt: (url: string, llms: string) => `${b}（${url}）是什么？请介绍它能做什么、怎么收费、适合谁。给 AI 的站点说明：${llms}`,
     },
+    support: { label: '帮助与支持' },
     feedback: {
       button: '反馈',
       eyebrow: '产品反馈',
@@ -288,7 +332,12 @@ export function zh(s: S): Content {
     },
     consent: {
       title: '统计 Cookie',
-      body: '我们用 Google Analytics 和一个记录来源链接的第一方 Cookie 了解网站的使用情况。点“接受”后才会写入，之后可在页脚“Cookie 设置”里修改。',
+      body: clarityId
+        ? `我们用${ga4Id ? ' Google Analytics、' : ' '}Microsoft Clarity 会话回放和一个记录来源链接的第一方 Cookie 了解网站的使用情况。点“接受”之前 Clarity 以无 Cookie 方式记录，其他都不写入；之后可在页脚“Cookie 设置”里修改。`
+        : '我们用 Google Analytics 和一个记录来源链接的第一方 Cookie 了解网站的使用情况。点“接受”后才会写入，之后可在页脚“Cookie 设置”里修改。',
+      bodyOptOut: clarityId
+        ? `你所在的地区默认开启统计 Cookie。我们用${ga4Id ? ' Google Analytics、' : ' '}Microsoft Clarity 会话回放和一个记录来源链接的第一方 Cookie 了解网站的使用情况。点“拒绝”即可关闭，之后 Clarity 以无 Cookie 方式记录。`
+        : '你所在的地区默认开启统计 Cookie。我们用 Google Analytics 和一个记录来源链接的第一方 Cookie 了解网站的使用情况。点“拒绝”即可关闭。',
       learnMore: '隐私政策',
       accept: '接受',
       reject: '拒绝',
@@ -451,10 +500,28 @@ export function zh(s: S): Content {
       sent: '已收到，我们会尽快回复你。',
       guides: `照片技巧和热潮背景，见 ${k} 指南`,
     },
+    verify: {
+      title: '验证视频',
+      body: `检查一段视频是否由 ${b} 生成。我们生成的每条视频，文件元数据里都带有机器可读的 AI 标识。选择文件后，浏览器会查找这个标识，再与我们的记录核对。文件只在你的设备上读取，不会上传。`,
+      choose: '选择视频文件',
+      checking: '检查中…',
+      foundTitle: `由 ${b} 生成`,
+      foundBody: '这条视频带有我们的 AI 标识，并且与我们生成的一条视频记录一致。',
+      foundByIdBody: '这个 ID 对应我们生成的一条视频。选择文件可以检查它是否带有我们的标识。',
+      fields: { generator: '生成方', model: '模型', created: '创建时间', id: '视频 ID' },
+      notFoundTitle: '没有匹配的记录',
+      notFoundBody: '标识指向的视频我们没有记录。它可能已被删除，也可能是标识被复制到了别的文件上。',
+      noMarkerTitle: '没有找到 AI 标识',
+      noMarkerBody: `这个文件里没有找到 ${b} 的 AI 标识。被平台重新压缩或重新上传过的视频通常会丢失元数据，所以这并不能证明视频是真实的，也不能证明它不是别人制作的。`,
+      readError: '无法读取这个文件，请选择 MP4 视频。',
+      lookupError: '暂时无法连接我们的记录，请稍后再试。',
+      caveat: '标识是元数据：它可以被移除，也可以被复制到别的文件上。匹配只说明标识对应一次真实的生成，不代表画面没有被修改。',
+    },
     report: {
       title: '举报内容 / 申请下架',
       body: `如果 ${b} 生成的视频未经你同意使用了你的形象、涉及未成年人、冒充他人或侵犯你的权利，请在这里告诉我们。每条举报都由人工审核，符合条件的内容会在 ${s.takedownSlaHours} 小时内下架，被下架的照片将无法再次上传。`,
-      name: '你的全名（作为电子签名）',
+      name: '你的全名',
+      signature: '电子签名（输入你的全名）',
       email: '联系邮箱',
       contentRef: '内容在哪里？',
       contentRefHint: '粘贴链接或文件名（下载的文件名里带有 gen_… 形式的 ID），也可以描述你在哪里看到的。',
@@ -510,6 +577,8 @@ export function zh(s: S): Content {
       metaTitle: `${k} AI 视频指南 – ${b}`,
       description: `${k} 热潮的来龙去脉，以及用一张照片制作 ${k} AI 视频的完整指南：怎么选照片、选时长，生成和分享有哪些技巧。`,
       intro: `了解 ${k} 热潮从何而来，学会用一张照片做出效果更好的 ${k} AI 视频。`,
+      styleDemo: `看看 ${k} 的效果`,
+      faqTitle: '常见问题',
       related: '相关指南',
     },
     errors: {
@@ -524,6 +593,8 @@ export function zh(s: S): Content {
       daily_limit: '今天的生成名额已满，请明天再试，本次没有扣积分。',
       rate_limited: '请求过于频繁，请稍后再试。',
       file_too_large: '文件超过 10 MB。',
+      photo_too_small: `照片太小，脸换不上去。请换一张短边至少 ${s.upload.minSide} 像素的照片。`,
+      photo_bad_ratio: `这张照片太窄或太扁，视频模型处理不了。请换一张长边不超过短边 ${s.upload.maxRatio} 倍的照片（普通自拍、半身照都可以；长截图请先裁一下）。`,
       length_required: '浏览器上传文件的方式不受支持，请换个浏览器重试。',
       unsupported_file_type: '请上传 JPG、PNG 或 WebP 图片。',
       invalid_upload: '请重新上传照片。',
@@ -561,8 +632,11 @@ export function zh(s: S): Content {
       subscription_cancel_unsupported: '这个订阅无法在这里取消，请联系客服。',
       media_removed: '该视频因举报已被下架。',
       share_rejected: '这条视频没有通过内容审核，不能公开分享。',
-      invalid_report: '请填写所有必填项并勾选声明。',
+      invalid_report: '请填写所有必填项、签名并勾选声明。',
+      consent_required: '请先勾选同意框再生成。',
       not_found: '没有找到对应内容，可能不属于当前账号。',
+      handoff_expired: '二维码已过期，请回到电脑上换一个。',
+      handoff_used: '这个二维码已经传过照片了。',
       internal_error: '发生意外错误，请重试。',
       account_disabled: `该账号已被停用。如有疑问，请发邮件至 ${s.supportEmail}。`,
       account_conflict: `这个邮箱已绑定另一个 Google 账号。请用那个账号登录，或发邮件至 ${s.supportEmail} 联系我们。`,
@@ -574,25 +648,30 @@ export function zh(s: S): Content {
         sections: [
           { h: '我们收集哪些信息', p: [`使用 Google 登录时，我们从 Google 获取你的姓名、邮箱和头像；使用邮箱验证码登录时，我们只获取你的邮箱地址。制作视频时，我们保存你上传的照片和生成的视频。支付信息由支付合作方处理，${b} 不会接触你的卡号。`] },
           { h: '我们如何使用', p: ['照片仅用于生成你请求的视频。邮箱用于账户运营、发送收据和服务通知（例如视频生成完成、你提交的举报已处理）以及回复客服请求。我们不发送营销邮件。我们不出售个人数据，也不会用你的照片训练模型。'] },
-          { h: '存储与保留', p: [`文件加密存储在我们的基础设施服务商处。上传的照片${photoRetention}，生成的视频${videoRetention}；你也可以提前删除它们或注销账号。订单与支付记录按税务和财务要求保留。注销账号后，我们只保留邮箱地址的单向哈希，用于防止同一邮箱重复领取注册赠送。`] },
-          { h: '安全检查', p: ['照片在使用前可能经过自动内容安全分类器检查，结果只用于执行内容规则，不作他用。公开表单使用防机器人服务保护，该服务可能处理你的 IP 地址和浏览器信号。'] },
+          { h: '存储与保留', p: [`文件加密存储在我们的基础设施服务商处。上传的照片${photoRetention}，生成的视频${videoRetention}；你也可以提前删除它们或注销账号。订单与支付记录按税务和财务要求保留。注销账号后，我们只保留邮箱地址的单向哈希，用于防止同一邮箱重复领取注册赠送。`, '登录或买积分前选的照片只保存在你的浏览器里，开始生成后或 24 小时后删除。手机扫码传的照片会经过我们的服务器中转：传到电脑后立即删除，最长保留 1 小时。'] },
+          { h: '安全检查', p: ['照片在使用前可能经过自动内容安全分类器检查，结果只用于执行内容规则，不作他用。公开表单使用防机器人服务保护，该服务可能处理你的 IP 地址和浏览器信号。生成的视频也可能经过同样的检查：交付前会从视频中截取几帧静态画面发给分类器，未通过的视频不会交付，积分会退回。'] },
           {
             h: 'Cookie 与统计',
             p: [
               '网站使用少量运行所必需的 Cookie 和浏览器存储，例如登录会话、你选择的浅色或深色主题。',
               '我们还会写入一个第一方 Cookie（vt_attr，保留 90 天），记录你第一次和最近一次是从哪里来到本站的，例如来源网站或推广链接。它只用于了解哪些渠道带来了注册和购买，不会提供给广告网络。' +
-                (ga4Id ? '它只在你于横幅中接受统计 Cookie 后写入，撤回同意时一并删除。' : ''),
+                (ga4Id || clarityId ? '它只在统计 Cookie 开启时写入，关闭时一并删除。' : ''),
+              ga4Id || clarityId
+                ? '如果你从欧洲经济区、英国或瑞士访问，或者我们无法判断你从哪里访问，统计 Cookie 在你于横幅中接受之前保持关闭；其他地区默认开启。无论你在哪里，都可以随时在页脚“Cookie 设置”中开启或关闭，关闭时这些 Cookie 会被删除。'
+                : '',
               s.referralRewardCredits > 0
                 ? '如果你打开了好友的邀请链接，我们会写入一个 Cookie（vt_ref，最多保留 30 天，注册后即删除），用于记录这次邀请。为防止滥用邀请奖励，邀请记录里保存的是你的 IP 地址加盐后的哈希值，不保存 IP 地址本身。邀请双方都看不到对方的账户信息。'
                 : '',
-              clarityId || ga4Id || cfBeaconToken || umamiWebsiteId ? '' : '我们不使用第三方统计或广告 Cookie。',
-              clarityId ? '我们使用 Microsoft Clarity 的会话回放和热图了解页面使用情况。Microsoft 会处理交互与设备数据，并可能使用统计 Cookie。Clarity 不受本站 Google Analytics 同意横幅控制。' : '',
+              ga4Id || cfBeaconToken || umamiWebsiteId || clarityId ? '' : '我们不使用第三方统计或广告 Cookie。',
               cfBeaconToken ? '我们用 Cloudflare Web Analytics 统计页面浏览量，它不使用 Cookie，也不会跨网站追踪你。' : '',
               umamiWebsiteId
                 ? '我们用 Umami 统计访问量，它从我们自己的域名加载，不写入 Cookie，也不保存你的 IP 地址；IP 地址只用于判断你所在的国家和统计独立访客。'
                 : '',
+              clarityId
+                ? '我们使用 Microsoft Clarity，通过热力图和会话回放（点击、滚动和页面切换）了解访客如何使用本站。你在表单中输入的文字会被遮盖，不会被记录。统计 Cookie 关闭时，Clarity 不写入 Cookie，也无法把不同页面的浏览关联起来；开启时它会写入 Cookie（例如 _clck、_clsk）来关联你的访问。Microsoft 代表我们处理这些数据，包括你的 IP 地址和设备信息。在页脚“Cookie 设置”中关闭统计 Cookie 会删除这些 Cookie。'
+                : '',
               ga4Id
-                ? '如果你在横幅中接受统计 Cookie，我们还会使用 Google Analytics。它会写入 Cookie（例如 _ga），并由 Google 处理你的 IP 地址和设备信息，为我们生成使用情况报告。在你点击“接受”之前不会加载 Google Analytics。你可以随时在页脚“Cookie 设置”中撤回同意，撤回时这些 Cookie 也会被删除。'
+                ? '统计 Cookie 开启时，我们还会使用 Google Analytics。它会写入 Cookie（例如 _ga），并由 Google 处理你的 IP 地址和设备信息，为我们生成使用情况报告。统计 Cookie 关闭时不会加载 Google Analytics，在页脚“Cookie 设置”中关闭时这些 Cookie 也会被删除。'
                 : '',
             ].filter(Boolean),
           },
@@ -606,7 +685,8 @@ export function zh(s: S): Content {
                 },
               ]
             : []),
-          { h: '服务提供方', p: [`我们只使用少量数据处理方：云托管、存储与邮件发送、仅为你的请求处理照片的 AI 渲染服务、内容安全分类服务，以及作为记录商户（Merchant of Record）的支付服务${clarityId || ga4Id || cfBeaconToken || umamiWebsiteId ? '；另有上文所述的统计服务' : ''}。`] },
+          { h: '服务提供方', p: [`我们只使用少量数据处理方：云托管、存储与邮件发送、仅为你的请求处理照片的 AI 渲染服务、内容安全分类服务，以及作为记录商户（Merchant of Record）的支付服务${ga4Id || cfBeaconToken || umamiWebsiteId || clarityId ? '；另有上文所述的统计服务' : ''}。`] },
+          { h: '儿童', p: [`${b} 不面向 13 岁以下儿童，并要求用户年满 18 岁。我们不会有意收集 13 岁以下儿童的个人信息；一旦发现已收集，会立即删除。如果你认为有儿童向我们提供了个人信息，请发送邮件至 ${s.supportEmail}。`] },
           { h: '你的权利', p: [`你可以随时下载或删除视频，也可以在“设置”中导出个人数据（JSON）或注销账号。其他隐私请求请发送邮件至 ${s.supportEmail}。`] },
         ],
       },
@@ -615,7 +695,7 @@ export function zh(s: S): Content {
         sections: [
           { h: '使用服务', p: [`${b} 让你通过一张照片制作 AI 短视频。你必须年满 18 周岁（或所在地法定成年年龄）才能使用。`] },
           { h: '内容与授权', p: ['只能上传你本人或已获得许可的成年人的照片。禁止上传未成年人、明星或公众人物的照片，禁止利用本服务骚扰、冒充或欺骗他人。我们有权删除违规内容并关闭相关账号。'] },
-          { h: '生成的视频', p: ['你可以将生成的视频用于个人和社交媒体用途。AI 输出可能存在瑕疵，分享前请先检查。视频带有“AI 生成”标识：分享时请保留标识并注明为 AI 生成，不得冒充真实事件的录像。'] },
+          { h: '生成的视频', p: [`你可以将生成的视频用于个人和社交媒体用途。AI 输出可能存在瑕疵，分享前请先检查。视频带有“AI 生成”标识：分享时请保留标识并注明为 AI 生成，不得冒充真实事件的录像。${s.aiMetadata.enabled ? '每个视频文件里还带有机器可读的 AI 元数据（XMP 标识，包含生成方、模型、创建时间和视频 ID，不含任何个人信息），你可以在“验证视频”页检查文件。' : ''}`] },
           { h: '举报与下架', p: [`任何人都可以通过举报页面提交举报。我们会在 ${s.takedownSlaHours} 小时内审核，并下架违反本条款或侵犯他人权利的内容；被下架的照片将无法再次上传。严重或多次违规的账号可能被关闭，已使用的积分不予退还。`] },
           {
             h: '积分与支付',
@@ -668,9 +748,18 @@ export function zh(s: S): Content {
         intro: `大约五分钟就能做出你的 ${k} 视频。下面是完整流程和让效果更好的小技巧。`,
         sections: [
           { h: '1. 选一张合适的照片', p: ['选近期拍摄、清晰、单人且正视镜头的照片，自然光最佳。避免墨镜、遮脸的帽子和美颜滤镜。'] },
-          { h: '2. 上传并选择时长', p: ['登录后把照片拖进生成器并选择时长。短片生成更快、积分更少；完整版覆盖整段舞蹈。'] },
+          {
+            h: '2. 上传并选择时长',
+            p: ['登录后把照片拖进生成器并选择时长。短片生成更快、积分更少；完整版覆盖整段舞蹈。'],
+            table: { head: ['时长', '积分'], rows: s.durations.map((d) => [`${d.seconds} 秒`, String(d.credits)]) },
+          },
           { h: '3. 确认授权并生成', p: ['勾选授权确认，表明照片是你本人或已获许可，然后开始生成。生成期间可以离开页面。'] },
           { h: '4. 下载并分享', p: ['生成完成后，在生成器或“我的视频”中下载 MP4，发布到任意平台。'] },
+        ],
+        faq: [
+          { q: `制作一条 ${k} AI 视频要多久？`, a: '大多数视频在 2–8 分钟内完成，取决于时长和排队情况。生成期间可以关闭页面，完成后在“我的视频”查看。' },
+          { q: '一条视频要多少积分？', a: `每秒视频消耗 1 积分，所以${s.durations.map((d) => `${d.seconds} 秒需要 ${d.credits} 积分`).join('，')}。生成失败会自动退回积分。` },
+          { q: '什么样的照片效果最好？', a: '近期拍摄、清晰、单人、正对镜头且光线均匀的照片。避免墨镜、遮脸的帽子和美颜滤镜。' },
         ],
       },
     },

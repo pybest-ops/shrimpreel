@@ -27,12 +27,14 @@ import { Route as Char123LocaleChar125SlugRouteImport } from './routes/{-$locale
 import { Route as Char123LocaleChar125ContactRouteImport } from './routes/{-$locale}/contact'
 import { Route as Char123LocaleChar125DashboardRouteRouteImport } from './routes/{-$locale}/dashboard/route'
 import { Route as Char123LocaleChar125GuidesRouteImport } from './routes/{-$locale}/guides'
+import { Route as Char123LocaleChar125PhoneUploadRouteImport } from './routes/{-$locale}/phone-upload'
 import { Route as Char123LocaleChar125PricingRouteImport } from './routes/{-$locale}/pricing'
 import { Route as Char123LocaleChar125PrivacyPolicyRouteImport } from './routes/{-$locale}/privacy-policy'
 import { Route as Char123LocaleChar125RefundPolicyRouteImport } from './routes/{-$locale}/refund-policy'
 import { Route as Char123LocaleChar125ReportRouteImport } from './routes/{-$locale}/report'
 import { Route as Char123LocaleChar125SignInRouteImport } from './routes/{-$locale}/sign-in'
 import { Route as Char123LocaleChar125TermsOfServiceRouteImport } from './routes/{-$locale}/terms-of-service'
+import { Route as Char123LocaleChar125VerifyRouteImport } from './routes/{-$locale}/verify'
 import { Route as AdminOrdersIndexRouteImport } from './routes/admin/orders.index'
 import { Route as AdminOrdersIdRouteImport } from './routes/admin/orders.$id'
 import { Route as AdminUsersIndexRouteImport } from './routes/admin/users.index'
@@ -141,6 +143,12 @@ const Char123LocaleChar125GuidesRoute =
     path: '/guides',
     getParentRoute: () => Char123LocaleChar125RouteRoute,
   } as any)
+const Char123LocaleChar125PhoneUploadRoute =
+  Char123LocaleChar125PhoneUploadRouteImport.update({
+    id: '/phone-upload',
+    path: '/phone-upload',
+    getParentRoute: () => Char123LocaleChar125RouteRoute,
+  } as any)
 const Char123LocaleChar125PricingRoute =
   Char123LocaleChar125PricingRouteImport.update({
     id: '/pricing',
@@ -175,6 +183,12 @@ const Char123LocaleChar125TermsOfServiceRoute =
   Char123LocaleChar125TermsOfServiceRouteImport.update({
     id: '/terms-of-service',
     path: '/terms-of-service',
+    getParentRoute: () => Char123LocaleChar125RouteRoute,
+  } as any)
+const Char123LocaleChar125VerifyRoute =
+  Char123LocaleChar125VerifyRouteImport.update({
+    id: '/verify',
+    path: '/verify',
     getParentRoute: () => Char123LocaleChar125RouteRoute,
   } as any)
 const AdminOrdersIndexRoute = AdminOrdersIndexRouteImport.update({
@@ -257,12 +271,14 @@ export interface FileRoutesByFullPath {
   '/{-$locale}/$slug': typeof Char123LocaleChar125SlugRoute
   '/{-$locale}/contact': typeof Char123LocaleChar125ContactRoute
   '/{-$locale}/guides': typeof Char123LocaleChar125GuidesRoute
+  '/{-$locale}/phone-upload': typeof Char123LocaleChar125PhoneUploadRoute
   '/{-$locale}/pricing': typeof Char123LocaleChar125PricingRoute
   '/{-$locale}/privacy-policy': typeof Char123LocaleChar125PrivacyPolicyRoute
   '/{-$locale}/refund-policy': typeof Char123LocaleChar125RefundPolicyRoute
   '/{-$locale}/report': typeof Char123LocaleChar125ReportRoute
   '/{-$locale}/sign-in': typeof Char123LocaleChar125SignInRoute
   '/{-$locale}/terms-of-service': typeof Char123LocaleChar125TermsOfServiceRoute
+  '/{-$locale}/verify': typeof Char123LocaleChar125VerifyRoute
   '/admin/': typeof AdminIndexRoute
   '/{-$locale}/': typeof Char123LocaleChar125IndexRoute
   '/admin/orders/$id': typeof AdminOrdersIdRoute
@@ -291,12 +307,14 @@ export interface FileRoutesByTo {
   '/{-$locale}/$slug': typeof Char123LocaleChar125SlugRoute
   '/{-$locale}/contact': typeof Char123LocaleChar125ContactRoute
   '/{-$locale}/guides': typeof Char123LocaleChar125GuidesRoute
+  '/{-$locale}/phone-upload': typeof Char123LocaleChar125PhoneUploadRoute
   '/{-$locale}/pricing': typeof Char123LocaleChar125PricingRoute
   '/{-$locale}/privacy-policy': typeof Char123LocaleChar125PrivacyPolicyRoute
   '/{-$locale}/refund-policy': typeof Char123LocaleChar125RefundPolicyRoute
   '/{-$locale}/report': typeof Char123LocaleChar125ReportRoute
   '/{-$locale}/sign-in': typeof Char123LocaleChar125SignInRoute
   '/{-$locale}/terms-of-service': typeof Char123LocaleChar125TermsOfServiceRoute
+  '/{-$locale}/verify': typeof Char123LocaleChar125VerifyRoute
   '/admin': typeof AdminIndexRoute
   '/{-$locale}': typeof Char123LocaleChar125IndexRoute
   '/admin/orders/$id': typeof AdminOrdersIdRoute
@@ -329,12 +347,14 @@ export interface FileRoutesById {
   '/{-$locale}/$slug': typeof Char123LocaleChar125SlugRoute
   '/{-$locale}/contact': typeof Char123LocaleChar125ContactRoute
   '/{-$locale}/guides': typeof Char123LocaleChar125GuidesRoute
+  '/{-$locale}/phone-upload': typeof Char123LocaleChar125PhoneUploadRoute
   '/{-$locale}/pricing': typeof Char123LocaleChar125PricingRoute
   '/{-$locale}/privacy-policy': typeof Char123LocaleChar125PrivacyPolicyRoute
   '/{-$locale}/refund-policy': typeof Char123LocaleChar125RefundPolicyRoute
   '/{-$locale}/report': typeof Char123LocaleChar125ReportRoute
   '/{-$locale}/sign-in': typeof Char123LocaleChar125SignInRoute
   '/{-$locale}/terms-of-service': typeof Char123LocaleChar125TermsOfServiceRoute
+  '/{-$locale}/verify': typeof Char123LocaleChar125VerifyRoute
   '/admin/': typeof AdminIndexRoute
   '/{-$locale}/': typeof Char123LocaleChar125IndexRoute
   '/admin/orders/$id': typeof AdminOrdersIdRoute
@@ -368,12 +388,14 @@ export interface FileRouteTypes {
     | '/{-$locale}/$slug'
     | '/{-$locale}/contact'
     | '/{-$locale}/guides'
+    | '/{-$locale}/phone-upload'
     | '/{-$locale}/pricing'
     | '/{-$locale}/privacy-policy'
     | '/{-$locale}/refund-policy'
     | '/{-$locale}/report'
     | '/{-$locale}/sign-in'
     | '/{-$locale}/terms-of-service'
+    | '/{-$locale}/verify'
     | '/admin/'
     | '/{-$locale}/'
     | '/admin/orders/$id'
@@ -402,12 +424,14 @@ export interface FileRouteTypes {
     | '/{-$locale}/$slug'
     | '/{-$locale}/contact'
     | '/{-$locale}/guides'
+    | '/{-$locale}/phone-upload'
     | '/{-$locale}/pricing'
     | '/{-$locale}/privacy-policy'
     | '/{-$locale}/refund-policy'
     | '/{-$locale}/report'
     | '/{-$locale}/sign-in'
     | '/{-$locale}/terms-of-service'
+    | '/{-$locale}/verify'
     | '/admin'
     | '/{-$locale}'
     | '/admin/orders/$id'
@@ -439,12 +463,14 @@ export interface FileRouteTypes {
     | '/{-$locale}/$slug'
     | '/{-$locale}/contact'
     | '/{-$locale}/guides'
+    | '/{-$locale}/phone-upload'
     | '/{-$locale}/pricing'
     | '/{-$locale}/privacy-policy'
     | '/{-$locale}/refund-policy'
     | '/{-$locale}/report'
     | '/{-$locale}/sign-in'
     | '/{-$locale}/terms-of-service'
+    | '/{-$locale}/verify'
     | '/admin/'
     | '/{-$locale}/'
     | '/admin/orders/$id'
@@ -593,6 +619,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof Char123LocaleChar125GuidesRouteImport
       parentRoute: typeof Char123LocaleChar125RouteRoute
     }
+    '/{-$locale}/phone-upload': {
+      id: '/{-$locale}/phone-upload'
+      path: '/phone-upload'
+      fullPath: '/{-$locale}/phone-upload'
+      preLoaderRoute: typeof Char123LocaleChar125PhoneUploadRouteImport
+      parentRoute: typeof Char123LocaleChar125RouteRoute
+    }
     '/{-$locale}/pricing': {
       id: '/{-$locale}/pricing'
       path: '/pricing'
@@ -633,6 +666,13 @@ declare module '@tanstack/react-router' {
       path: '/terms-of-service'
       fullPath: '/{-$locale}/terms-of-service'
       preLoaderRoute: typeof Char123LocaleChar125TermsOfServiceRouteImport
+      parentRoute: typeof Char123LocaleChar125RouteRoute
+    }
+    '/{-$locale}/verify': {
+      id: '/{-$locale}/verify'
+      path: '/verify'
+      fullPath: '/{-$locale}/verify'
+      preLoaderRoute: typeof Char123LocaleChar125VerifyRouteImport
       parentRoute: typeof Char123LocaleChar125RouteRoute
     }
     '/admin/orders/': {
@@ -784,12 +824,14 @@ interface Char123LocaleChar125RouteRouteChildren {
   Char123LocaleChar125SlugRoute: typeof Char123LocaleChar125SlugRoute
   Char123LocaleChar125ContactRoute: typeof Char123LocaleChar125ContactRoute
   Char123LocaleChar125GuidesRoute: typeof Char123LocaleChar125GuidesRoute
+  Char123LocaleChar125PhoneUploadRoute: typeof Char123LocaleChar125PhoneUploadRoute
   Char123LocaleChar125PricingRoute: typeof Char123LocaleChar125PricingRoute
   Char123LocaleChar125PrivacyPolicyRoute: typeof Char123LocaleChar125PrivacyPolicyRoute
   Char123LocaleChar125RefundPolicyRoute: typeof Char123LocaleChar125RefundPolicyRoute
   Char123LocaleChar125ReportRoute: typeof Char123LocaleChar125ReportRoute
   Char123LocaleChar125SignInRoute: typeof Char123LocaleChar125SignInRoute
   Char123LocaleChar125TermsOfServiceRoute: typeof Char123LocaleChar125TermsOfServiceRoute
+  Char123LocaleChar125VerifyRoute: typeof Char123LocaleChar125VerifyRoute
   Char123LocaleChar125IndexRoute: typeof Char123LocaleChar125IndexRoute
   Char123LocaleChar125CheckoutMockRoute: typeof Char123LocaleChar125CheckoutMockRoute
   Char123LocaleChar125CheckoutSuccessRoute: typeof Char123LocaleChar125CheckoutSuccessRoute
@@ -803,6 +845,7 @@ const Char123LocaleChar125RouteRouteChildren: Char123LocaleChar125RouteRouteChil
     Char123LocaleChar125SlugRoute: Char123LocaleChar125SlugRoute,
     Char123LocaleChar125ContactRoute: Char123LocaleChar125ContactRoute,
     Char123LocaleChar125GuidesRoute: Char123LocaleChar125GuidesRoute,
+    Char123LocaleChar125PhoneUploadRoute: Char123LocaleChar125PhoneUploadRoute,
     Char123LocaleChar125PricingRoute: Char123LocaleChar125PricingRoute,
     Char123LocaleChar125PrivacyPolicyRoute:
       Char123LocaleChar125PrivacyPolicyRoute,
@@ -812,6 +855,7 @@ const Char123LocaleChar125RouteRouteChildren: Char123LocaleChar125RouteRouteChil
     Char123LocaleChar125SignInRoute: Char123LocaleChar125SignInRoute,
     Char123LocaleChar125TermsOfServiceRoute:
       Char123LocaleChar125TermsOfServiceRoute,
+    Char123LocaleChar125VerifyRoute: Char123LocaleChar125VerifyRoute,
     Char123LocaleChar125IndexRoute: Char123LocaleChar125IndexRoute,
     Char123LocaleChar125CheckoutMockRoute:
       Char123LocaleChar125CheckoutMockRoute,

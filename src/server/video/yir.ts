@@ -67,6 +67,7 @@ export function createYirProvider(env: Env): VideoProvider {
       method: body === undefined ? 'GET' : 'POST',
       headers: headers(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(25_000),
     })
     const data = (await response.json().catch(() => null)) as (T & { error?: YirError | null }) | null
     if (!response.ok || !data) throw requestError(stage, response, data)
@@ -113,7 +114,7 @@ export function createYirProvider(env: Env): VideoProvider {
   // 把合成图传进 Files API，返回 file_id；文件还在处理时返回 null，下次轮询再来。
   // 幂等键固定，重复调用拿回同一个文件；已经传完的不再 PUT
   async function uploadScene(generationId: string, url: string, mediaType: string) {
-    const download = await fetch(url)
+    const download = await fetch(url, { signal: AbortSignal.timeout(25_000) })
     if (!download.ok) throw new VideoProviderError('yir_scene_download', `download scene failed: HTTP ${download.status}`, true)
     const bytes = new Uint8Array(await download.arrayBuffer())
     const ext = mediaType === 'image/png' ? 'png' : mediaType === 'image/webp' ? 'webp' : 'jpg'
@@ -128,7 +129,7 @@ export function createYirProvider(env: Env): VideoProvider {
     const fileId = encodeURIComponent(file.id)
     if (file.status === 'pending_upload') {
       const partUrl = file.upload?.parts?.[0]?.url
-      const put = partUrl ? await fetch(partUrl, { method: 'PUT', body: bytes }) : null
+      const put = partUrl ? await fetch(partUrl, { method: 'PUT', body: bytes, signal: AbortSignal.timeout(25_000) }) : null
       if (!put?.ok) throw new VideoProviderError('yir_upload_put', `upload scene failed: HTTP ${put?.status ?? 'no url'}`, true)
       await call('upload', `/files/${fileId}/complete`, {})
     }
@@ -160,9 +161,11 @@ export function createYirProvider(env: Env): VideoProvider {
   return {
     id: 'yir',
     async submit(input) {
+      if (input.imageUrls.length > 1) throw new VideoProviderError('multi_photo_unsupported', 'yir takes one photo', false)
+      const photoUrl = input.imageUrls[0]!
       const scene = input.style.scene
       if (!scene) {
-        const reference = { role: 'reference_image', url: input.imageUrl } as const
+        const reference = { role: 'reference_image', url: photoUrl } as const
         const requestId = await submitVideo(input.generationId, reference, input.sourceVideoUrl, input.durationSeconds, input.webhookUrl, input.style.prompt)
         return { requestId, meta: {} }
       }
@@ -175,7 +178,7 @@ export function createYirProvider(env: Env): VideoProvider {
           prompt: scene.prompt,
           references: [
             { role: 'reference_image', url: templateSourceUrl(env, scene.frame) },
-            { role: 'reference_image', url: input.imageUrl },
+            { role: 'reference_image', url: photoUrl },
           ],
         },
         parameters: { resolution: image.resolution, aspect_ratio: image.aspectRatio, n: 1 },

@@ -7,6 +7,7 @@ import { minorToDisplay } from './amount'
 import type {
   CheckoutInput,
   CheckoutResult,
+  DisputeStage,
   PaidLookup,
   PaymentEvent,
   PaymentProvider,
@@ -31,6 +32,7 @@ export function createDodoProvider(env: Env): PaymentProvider {
       method,
       headers: { Authorization: `Bearer ${apiKey}`, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(20_000),
     })
     const json = (await response.json().catch(() => null)) as Record<string, unknown> | null
     if (!response.ok) {
@@ -56,6 +58,7 @@ export function createDodoProvider(env: Env): PaymentProvider {
           return_url: input.successUrl,
           metadata: { orderId: input.order.id, userId: input.user.id, packageId: input.order.packageId, site: site.domain },
         }),
+        signal: AbortSignal.timeout(20_000),
       })
       const body = (await response.json().catch(() => null)) as { session_id?: string; checkout_url?: string } | null
       if (!response.ok || !body?.checkout_url) {
@@ -82,6 +85,7 @@ export function createDodoProvider(env: Env): PaymentProvider {
           metadata: { orderId: input.orderId },
           ...(input.fullAmount ? {} : { items: [{ item_id: productId, amount: input.amountCents, tax_inclusive: true }] }),
         }),
+        signal: AbortSignal.timeout(20_000),
       })
       const body = (await response.json().catch(() => null)) as { refund_id?: string; status?: string; message?: string } | null
       // 409 是业务冲突，原样透传给后台。实测（test 模式）：钱包余额不足时返回 "Insufficient funds in wallet"
@@ -99,7 +103,7 @@ export function createDodoProvider(env: Env): PaymentProvider {
       if (!apiKey) throw new ApiError(503, 'payment_not_configured', 'DODO_API_KEY missing')
       if (!order.providerSessionId) return null
       const get = async (path: string) => {
-        const response = await fetch(`${baseUrl}${path}`, { headers: { Authorization: `Bearer ${apiKey}` } })
+        const response = await fetch(`${baseUrl}${path}`, { headers: { Authorization: `Bearer ${apiKey}` }, signal: AbortSignal.timeout(20_000) })
         if (response.status === 404) return null
         if (!response.ok) throw new ApiError(502, 'payment_provider_error', `Dodo GET ${path.split('/')[1]} failed (HTTP ${response.status})`)
         return (await response.json()) as Record<string, unknown>
@@ -209,6 +213,31 @@ export function normalizeDodoEvent(payload: Record<string, unknown>): PaymentEve
         refundAmountCents: data.is_partial === true ? int(data.amount) : null,
         originalAmountCents: null,
       }
+    // 争议（拒付）：data 是 Dispute 对象，字段 dispute_id、payment_id、amount（字符串，文档没写单位，所以不当作分使用）、
+    // dispute_stage（pre_dispute / dispute / pre_arbitration）、reason。
+    // opened 回收积分；won 补回；lost / accepted（商户接受，资金退回持卡人）/ expired（超时未回应）记为失败；
+    // cancelled（持卡人撤销，资金留在商户）按 closed 补回；challenged（已提交证据）不改变资金，忽略
+    // https://docs.dodopayments.com/developer-resources/webhooks/intents/dispute
+    case 'dispute.opened':
+    case 'dispute.won':
+    case 'dispute.lost':
+    case 'dispute.accepted':
+    case 'dispute.expired':
+    case 'dispute.cancelled': {
+      const disputeId = str(data.dispute_id)
+      if (!disputeId) return { kind: 'ignored', eventId, eventType }
+      return {
+        kind: 'disputed',
+        eventId,
+        eventType,
+        orderId,
+        providerPaymentId: str(data.payment_id),
+        disputeId,
+        stage: DODO_DISPUTE_STAGE[eventType]!,
+        amountCents: null,
+        reason: str(data.reason) ?? str(data.remarks),
+      }
+    }
     default:
       // 订阅事件的 data 是完整的订阅对象，各类事件统一按其中的状态处理
       // https://docs.dodopayments.com/developer-resources/subscription-integration-guide
@@ -231,6 +260,15 @@ export function normalizeDodoEvent(payload: Record<string, unknown>): PaymentEve
       }
       return { kind: 'ignored', eventId, eventType }
   }
+}
+
+const DODO_DISPUTE_STAGE: Record<string, DisputeStage> = {
+  'dispute.opened': 'opened',
+  'dispute.won': 'won',
+  'dispute.lost': 'lost',
+  'dispute.accepted': 'lost',
+  'dispute.expired': 'lost',
+  'dispute.cancelled': 'closed',
 }
 
 // on_hold：续费扣款失败，等买家更新付款方式；paused 不改本地状态（不续费也不终止，模板不主动暂停）

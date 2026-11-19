@@ -15,6 +15,8 @@ export interface TakedownInput {
   isDepicted: boolean
   // 善意声明（TAKE IT DOWN Act 等要求举报人声明内容未经同意）
   attest: boolean
+  // 电子签名（输入全名）
+  signature: string
 }
 
 // 下载文件名和链接里都带 generation id，举报人粘贴文件名或链接即可定位
@@ -31,13 +33,15 @@ export function parseTakedown(body: Partial<TakedownInput>) {
   const email = field(body.email, 320)
   const contentRef = field(body.contentRef, 2000)
   const details = field(body.details, 5000)
+  const signature = field(body.signature, 200)
   const reason = TAKEDOWN_REASONS.find((r) => r === body.reason)
   if (!name) throw new ApiError(400, 'invalid_report', 'name')
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new ApiError(400, 'invalid_email')
   if (contentRef.length < 3) throw new ApiError(400, 'invalid_report', 'contentRef')
   if (!reason) throw new ApiError(400, 'invalid_report', 'reason')
   if (body.attest !== true) throw new ApiError(400, 'invalid_report', 'attest')
-  return { name, email, contentRef, details: details || null, reason, isDepicted: body.isDepicted === true }
+  if (!signature) throw new ApiError(400, 'invalid_report', 'signature')
+  return { name, email, contentRef, details: details || null, reason, isDepicted: body.isDepicted === true, signature }
 }
 
 export async function createTakedown(
@@ -54,7 +58,7 @@ export async function createTakedown(
     (await generationIdFromShareLink(env, `${input.contentRef}\n${input.details ?? ''}`))
   await env.DB.prepare(
     `INSERT INTO takedown_requests (id, reporter_name, reporter_email, reporter_user_id, content_ref, generation_id, reason,
-     details, is_depicted, status, due_at, locale, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)`,
+     details, is_depicted, signature, status, due_at, locale, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?, ?)`,
   )
     .bind(
       id,
@@ -66,6 +70,7 @@ export async function createTakedown(
       input.reason,
       input.details,
       input.isDepicted ? 1 : 0,
+      input.signature,
       dueAt,
       locale,
       now.toISOString(),
@@ -94,13 +99,16 @@ async function generationIdFromShareLink(env: Env, text: string) {
   return row?.id ?? null
 }
 
-// 下架：被举报的成片用到的每张原图（主角 + 多人风格的可选位置），以及同一文件（按 sha256，包括其他账号上传的）
+// 下架：被举报的成片用到的每张原图（主角 + 双人第二张 + 多人风格的可选位置），以及同一文件（按 sha256，包括其他账号上传的）
 // 生成的所有成片和原图都删除，进行中的任务判失败并退款，再把哈希加入黑名单阻止重新上传。
 // 多人成片不知道举报针对的是哪一个人，所以所有照片一起处理
 export async function removeReportedContent(env: Env, generation: GenerationRow, takedownId: string) {
   const db = env.DB
   const seatRows = await db.prepare('SELECT upload_id FROM generation_seats WHERE generation_id = ?').bind(generation.id).all<{ upload_id: string }>()
-  const uploadIds = [generation.upload_id, ...seatRows.results.map((row) => row.upload_id)]
+  // 主角照片、双人第二张和多人可选位置的照片全部按同样的规则处理
+  const uploadIds = [generation.upload_id, generation.second_upload_id, ...seatRows.results.map((row) => row.upload_id)].filter(
+    (id): id is string => Boolean(id),
+  )
   const hashes: string[] = []
   for (const uploadId of uploadIds) {
     const upload = await db.prepare('SELECT * FROM uploads WHERE id = ?').bind(uploadId).first<UploadRow>()
@@ -113,18 +121,17 @@ export async function removeReportedContent(env: Env, generation: GenerationRow,
   }
 
   const list = (values: readonly string[]) => values.map(() => '?').join(', ')
-  const uploadMatch = `(id IN (${list(uploadIds)}) OR (sha256 IS NOT NULL AND sha256 IN (${list(hashes.length ? hashes : [''])})))`
-  const uploadParams = [...uploadIds, ...(hashes.length ? hashes : [''])]
-  // 用到这些原图的成片：主角照片在 generations.upload_id，可选位置在 generation_seats
+  const uploadMatch = `(id IN (${list(uploadIds)})${hashes.length ? ` OR (sha256 IS NOT NULL AND sha256 IN (${list(hashes)}))` : ''})`
+  const uploadParams = [...uploadIds, ...hashes]
+  // 用到这些原图的成片：主角照片在 generations.upload_id，双人第二张在 second_upload_id，可选位置在 generation_seats
   const generationMatch = `(id = ? OR upload_id IN (SELECT id FROM uploads WHERE ${uploadMatch})
+         OR second_upload_id IN (SELECT id FROM uploads WHERE ${uploadMatch})
          OR id IN (SELECT generation_id FROM generation_seats WHERE upload_id IN (SELECT id FROM uploads WHERE ${uploadMatch})))`
-  const generationParams = [generation.id, ...uploadParams, ...uploadParams]
+  const generationParams = [generation.id, ...uploadParams, ...uploadParams, ...uploadParams]
   const [uploads, generations] = await db.batch([
     db.prepare(`SELECT id, r2_key FROM uploads WHERE expired_at IS NULL AND ${uploadMatch}`).bind(...uploadParams),
     db
-      .prepare(
-        `SELECT id, user_id, status, output_r2_key, share_poster_key FROM generations WHERE removed_at IS NULL AND ${generationMatch}`,
-      )
+      .prepare(`SELECT id, user_id, status, output_r2_key, share_poster_key FROM generations WHERE removed_at IS NULL AND ${generationMatch}`)
       .bind(...generationParams),
   ])
   const uploadRows = uploads!.results as Array<{ id: string; r2_key: string }>

@@ -5,9 +5,12 @@ export interface VideoSubmitInput {
   // 任务所属风格：prompt、两步走的首帧都跟着风格走
   style: Style
   durationSeconds: number
-  imageUrl: string
+  // 兼容字段：单人签名地址（= imageUrls[0]），只有旧调用方使用
+  imageUrl?: string
   // 照片在 R2 的 key：要先把素材转存到服务商存储的 provider（haomao）直接从 R2 读，不经过签名地址
-  imageKey: string
+  imageKey?: string
+  // 用户照片的签名地址；第 1 张 = 源视频左边的人（单人风格只有一张；duo 风格第 2 张 = 右边的人）
+  imageUrls: readonly string[]
   sourceVideoUrl: string
   sourceVideoKey: string
   // 多人风格可选位置的照片（R2 key），按 style.seats 的顺序；只有支持多张参考图的服务商（haomao）使用
@@ -16,6 +19,8 @@ export interface VideoSubmitInput {
   audioKey?: string
   webhookUrl: string
   meta: Record<string, unknown>
+  // 是否为队列重试提交：首次为 false（可跳过列表去重直接创建），重试为 true（需先查重避免重复扣费）
+  isRetry?: boolean
 }
 
 export interface VideoSubmitResult {

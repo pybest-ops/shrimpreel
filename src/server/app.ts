@@ -1,8 +1,9 @@
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
-import { defaultStyle, findDuration, findPackage, findPlan, findStyle, isLocale, localePath, sellingPlans, site, type Style } from '#/config/site'
+import { defaultStyle, findPackage, findPlan, findStyle, findStyleDuration, isLocale, localePath, sellingPlans, site, stylePhotoCount, type Style } from '#/config/site'
 import { safeRedirectPath } from '#/lib/redirect'
+import { GENERATION_ID_PATTERN } from '#/lib/xmp'
 import { exportFileName, exportUserData } from './account-export'
 import { adminRoutes } from './admin'
 import { runHealthCheck } from './alerts'
@@ -23,11 +24,13 @@ import {
 } from './email-login'
 import { CLIENT_ERROR_PATH, summarizeClientError } from './client-error'
 import { clawbackStatements, expireStatements, ledgerStatements } from './credits'
+import { consentText } from './consent'
 import { CSP_REPORT_PATH, summarizeCspReports } from './csp'
 import { exchangeGoogleCode, googleAuthRedirect, googleClientId, googleOAuthConfig, verifyGoogleIdToken } from './google'
 import { publicGeneration, publicOrder, rateLimit, readJson, requireUser, pageParams } from './http'
 import { enqueueJob, failGeneration, handleDeadLetter, handleVideoJob } from './jobs'
-import { jobToken, serveR2Object, sniffImageType, verifyUploadSignature } from './media'
+import { handoffRoutes } from './handoff'
+import { jobToken, readImageFile, readUploadForm, serveR2Object, verifyUploadSignature } from './media'
 import { landingKey } from './seo'
 import { getModerationProvider } from './moderation'
 import { processPaymentEvent } from './orders'
@@ -58,7 +61,8 @@ import { createTakedown, isBlockedMedia, parseTakedown, type TakedownInput } fro
 import { turnstileSiteKey, verifyTurnstile } from './turnstile'
 import type { AppContext, GenerationRow, OrderRow, UploadRow, UserRow } from './types'
 import { ApiError, constantTimeEqual, createId, isCheckConstraintError, isProduction, nowIso, randomToken, sha256Hex } from './util'
-import { SEAT_PROVIDERS, activeVideoProviderId } from './video'
+import { SEAT_PROVIDERS, activeVideoProviderId, videoProviderIdForStyle } from './video'
+import { videoModelName } from './video/model-name'
 
 const MAX_ACTIVE_JOBS_PER_USER = 3
 
@@ -121,13 +125,31 @@ app.post(CLIENT_ERROR_PATH, async (c) => {
   return c.body(null, 204)
 })
 
+const ONE_TAP_NONCE_COOKIE = 'g_nonce'
+
+function issueOneTapNonce(c: Context<AppContext>): string {
+  const nonce = randomToken(18)
+  setCookie(c, ONE_TAP_NONCE_COOKIE, nonce, {
+    httpOnly: true,
+    secure: isProduction(c.env),
+    sameSite: 'Strict',
+    path: '/api/auth/google',
+    maxAge: 600,
+  })
+  return nonce
+}
+
 app.get('/api/me', async (c) => {
   const user = c.get('user')
   const settings = await getSettings(c.env)
+  const clientId = googleClientId(c.env) ?? null
+  const oneTapNonce = !user && clientId ? issueOneTapNonce(c) : null
+  c.header('Cache-Control', 'no-store')
   return c.json({
     user: user ? publicUser(user) : null,
+    oneTapNonce,
     config: {
-      googleClientId: googleClientId(c.env) ?? null,
+      googleClientId: clientId,
       devLogin: !isProduction(c.env),
       // 邮箱验证码登录：生产环境配好发信才开
       emailSignIn: emailSignInEnabled(c.env),
@@ -139,8 +161,6 @@ app.get('/api/me', async (c) => {
 })
 
 // ---------- Auth ----------
-
-const ONE_TAP_NONCE_COOKIE = 'g_nonce'
 
 app.get('/api/auth/google/start', async (c) => {
   await rateLimit(c.env.AUTH_LIMITER, c.req.header('cf-connecting-ip') ?? 'local')
@@ -193,14 +213,7 @@ app.get('/api/auth/google/callback', async (c) => {
 // One Tap 初始化前先取 nonce：同一个值存进只发往登录接口的 cookie，Google 签进 id_token，提交时两者必须一致
 app.get('/api/auth/google/nonce', (c) => {
   if (!googleClientId(c.env)) throw new ApiError(503, 'google_not_configured')
-  const nonce = randomToken(18)
-  setCookie(c, ONE_TAP_NONCE_COOKIE, nonce, {
-    httpOnly: true,
-    secure: isProduction(c.env),
-    sameSite: 'Strict',
-    path: '/api/auth/google',
-    maxAge: 600,
-  })
+  const nonce = issueOneTapNonce(c)
   c.header('Cache-Control', 'no-store')
   return c.json({ nonce })
 })
@@ -343,19 +356,8 @@ app.post('/api/auth/logout', async (c) => {
 app.post('/api/uploads', async (c) => {
   const user = requireUser(c)
   await rateLimit(c.env.UPLOAD_LIMITER, user.id)
-  // 没有 Content-Length（分块上传）时 formData() 会把整个请求体读进内存，直接拒绝；浏览器上传表单总会带长度
-  const header = c.req.header('content-length')
-  if (!header || !/^\d+$/.test(header)) throw new ApiError(411, 'length_required')
-  if (Number(header) > site.upload.maxBytes + 64 * 1024) throw new ApiError(413, 'file_too_large')
-  const form = await c.req.raw.formData().catch(() => null)
-  const file = form?.get('file')
-  if (!file || typeof file === 'string') throw new ApiError(400, 'missing_file')
-  if (file.size > site.upload.maxBytes) throw new ApiError(413, 'file_too_large')
-  const bytes = new Uint8Array(await file.arrayBuffer())
-  const contentType = sniffImageType(bytes)
-  if (!contentType || !(site.upload.contentTypes as readonly string[]).includes(contentType)) {
-    throw new ApiError(415, 'unsupported_file_type')
-  }
+  const form = await readUploadForm(c)
+  const { bytes, contentType } = await readImageFile(form)
   // 已下架内容的原图不允许再次上传；审核不通过的不落盘、不扣积分
   const hash = await sha256Hex(bytes)
   if (await isBlockedMedia(c.env, hash)) throw new ApiError(422, 'content_rejected')
@@ -387,18 +389,33 @@ app.post('/api/generations', async (c) => {
   const settings = await getSettings(c.env)
   assertOpen(settings, user)
   await rateLimit(c.env.GENERATE_LIMITER, user.id)
-  const body = await readJson<{ uploadId: string; seats?: Record<string, unknown>; durationId: string; styleId?: string; mockOutcome: string; locale: string }>(c)
-  const duration = findDuration(body.durationId ?? '')
-  if (!duration) throw new ApiError(400, 'invalid_duration')
+  const body = await readJson<{ uploadId: string; uploadIds: unknown; seats?: Record<string, unknown>; durationId: string; styleId?: string; mockOutcome: string; locale: string; consent: unknown }>(c)
+  // 生成前必须同意（照片是本人或已获许可、对方成年）：服务端留存同意时间和当时的文案原文
+  if (body.consent !== true) throw new ApiError(400, 'consent_required')
   // 不带 styleId 用默认风格；带了但不存在报错，不悄悄换风格
   const style = body.styleId === undefined || body.styleId === null ? defaultStyle : findStyle(String(body.styleId))
   if (!style) throw new ApiError(400, 'invalid_style')
+  // 时长档位跟着风格走（风格没配自己的就是全站的）
+  const duration = findStyleDuration(style, body.durationId ?? '')
+  if (!duration) throw new ApiError(400, 'invalid_duration')
   const db = c.env.DB
-  const upload = await db
-    .prepare('SELECT * FROM uploads WHERE id = ? AND user_id = ? AND expired_at IS NULL')
-    .bind(body.uploadId ?? '', user.id)
-    .first<UploadRow>()
-  if (!upload) throw new ApiError(400, 'invalid_upload')
+  // uploadIds 优先，兼容旧的单张 uploadId；张数必须等于风格要求（第 1 张 = 左边的人，第 2 张 = 右边的人）
+  const uploadIds: unknown = body.uploadIds ?? (body.uploadId === undefined ? [] : [body.uploadId])
+  if (!Array.isArray(uploadIds) || uploadIds.length !== stylePhotoCount(style) || uploadIds.some((id) => typeof id !== 'string')) {
+    throw new ApiError(400, 'invalid_upload')
+  }
+  const uploads: UploadRow[] = []
+  for (const uploadId of uploadIds as string[]) {
+    const found = await db
+      .prepare('SELECT * FROM uploads WHERE id = ? AND user_id = ? AND expired_at IS NULL')
+      .bind(uploadId, user.id)
+      .first<UploadRow>()
+    if (!found) throw new ApiError(400, 'invalid_upload')
+    uploads.push(found)
+  }
+  const upload = uploads[0]!
+  const secondUpload = uploads[1] ?? null
+  // 多人风格的可选位置照片（generation_seats），主角照片在 uploadIds 里
   const seatUploads = await resolveSeatUploads(db, c.env, user.id, style, upload, body.seats)
   const active = await db
     .prepare(`SELECT COUNT(*) AS n FROM generations WHERE user_id = ? AND status IN ('queued', 'processing')`)
@@ -409,20 +426,21 @@ app.post('/api/generations', async (c) => {
   if (cap > 0 && (await generationsToday(db, nowIso())) >= cap) throw new ApiError(429, 'daily_limit')
   await rememberLocale(c.env, user, body.locale)
 
-  const providerId = activeVideoProviderId(c.env)
-  const mockOutcome = providerId === 'mock' && (body.mockOutcome === 'fail' || body.mockOutcome === 'hang') ? body.mockOutcome : null
+  const providerId = videoProviderIdForStyle(c.env, style)
+  const mockOutcome = providerId === 'mock' && (body.mockOutcome === 'fail' || body.mockOutcome === 'hang' || body.mockOutcome === 'output_reject') ? body.mockOutcome : null
   const meta = mockOutcome ? JSON.stringify({ mockOutcome }) : null
   const id = createId('gen')
   const now = nowIso()
+  const consent = await consentText(body.locale)
   try {
     await db.batch([
       db
         .prepare(
           `INSERT INTO generations (id, user_id, template_id, duration_id, duration_seconds, credits_cost, upload_id,
-           status, provider, provider_meta, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
+           second_upload_id, status, provider, provider_meta, created_at, updated_at, consent_at, consent_text)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)`,
         )
-        .bind(id, user.id, style.id, duration.id, duration.seconds, duration.credits, upload.id, providerId, meta, now, now),
+        .bind(id, user.id, style.id, duration.id, duration.seconds, duration.credits, upload.id, secondUpload?.id ?? null, providerId, meta, now, now, now, consent),
       ...seatUploads.map((seat) =>
         db.prepare('INSERT INTO generation_seats (generation_id, seat_id, upload_id) VALUES (?, ?, ?)').bind(id, seat.seatId, seat.uploadId),
       ),
@@ -487,6 +505,28 @@ app.get('/api/generations/:id/video', async (c) => {
   return serveR2Object(c.env.MEDIA, row.output_r2_key, c.req.raw, {
     cacheControl: 'private, max-age=3600',
     downloadName: download ? `${site.brandName.replace(/\s+/g, '-').toLowerCase()}-ai-video-${row.id}.mp4` : undefined,
+  })
+})
+
+// 验证页（/verify）的后端：成片里的 AI 标记带着生成 id，这里只回答“是不是本站生成的”。
+// 不返回任何用户信息；不存在、已删除、已被下架都是 found:false，不区分原因
+app.get('/api/verify/:generationId', async (c) => {
+  if (!site.aiMetadata.enabled) throw new ApiError(404, 'not_found')
+  await rateLimit(c.env.AUTH_LIMITER, `verify:${c.req.header('cf-connecting-ip') ?? 'local'}`)
+  const id = c.req.param('generationId')
+  const row = GENERATION_ID_PATTERN.test(id)
+    ? await c.env.DB.prepare(`SELECT provider, created_at, completed_at FROM generations WHERE id = ? AND status = 'succeeded' AND removed_at IS NULL`)
+        .bind(id)
+        .first<Pick<GenerationRow, 'provider' | 'created_at' | 'completed_at'>>()
+    : null
+  c.header('cache-control', 'no-store')
+  if (!row) return c.json({ found: false })
+  return c.json({
+    found: true,
+    brand: site.brandName,
+    createdAt: row.completed_at ?? row.created_at,
+    model: videoModelName(row.provider),
+    provider: row.provider,
   })
 })
 
@@ -725,8 +765,9 @@ app.post('/api/mock-payments/complete', async (c) => {
   const user = requireUser(c)
   const body = await readJson<{
     orderId: string
-    outcome: 'paid' | 'failed' | 'refunded'
+    outcome: 'paid' | 'failed' | 'refunded' | 'dispute_opened' | 'dispute_won' | 'dispute_lost' | 'dispute_closed' | 'fraud_warning'
     eventId: string
+    disputeId?: string // 争议类 outcome 的争议号，默认每张订单一个
     amountCents?: number
     paidAmountCents?: number
     paidCurrency?: string
@@ -778,7 +819,23 @@ app.post('/api/mock-payments/complete', async (c) => {
             refundAmountCents: Number.isInteger(body.amountCents) && body.amountCents! > 0 ? body.amountCents! : null,
             originalAmountCents: null,
           }
-        : { kind: 'failed', eventId, eventType: 'mock.failed', orderId: order.id }
+        : outcome === 'fraud_warning'
+          ? { kind: 'fraud_warning', eventId, eventType: 'mock.fraud_warning', orderId: order.id, providerPaymentId: order.provider_payment_id }
+          : outcome.startsWith('dispute_')
+            ? {
+                kind: 'disputed',
+                eventId,
+                eventType: `mock.${outcome}`,
+                orderId: order.id,
+                providerPaymentId: order.provider_payment_id,
+                disputeId: body.disputeId ?? `mock_dp_${order.id}`,
+                stage: ({ dispute_opened: 'opened', dispute_won: 'won', dispute_lost: 'lost', dispute_closed: 'closed' } as const)[
+                  outcome as 'dispute_opened' | 'dispute_won' | 'dispute_lost' | 'dispute_closed'
+                ],
+                amountCents: order.paid_amount_cents ?? order.amount_cents,
+                reason: 'mock',
+              }
+            : { kind: 'failed', eventId, eventType: 'mock.failed', orderId: order.id }
   if (body.deliver === false) {
     if (event.kind !== 'paid') throw new ApiError(400, 'invalid_request')
     await c.env.KV.put(mockPaidKey(order.id), JSON.stringify({ ...event, eventId: `reconcile:${event.providerPaymentId}` }), {
@@ -1140,6 +1197,7 @@ app.post('/api/dev/backup', async (c) => {
 // ---------- Admin ----------
 
 app.route('/api/admin', adminRoutes)
+app.route('/api/handoff', handoffRoutes)
 app.route('/', seoRoutes)
 
 app.all('/api/*', () => {

@@ -6,7 +6,7 @@ import { Generator } from '#/components/Generator'
 import { Pricing } from '#/components/Pricing'
 import { VideoCard } from '#/components/VideoCard'
 import { LocalLink } from '#/components/ui'
-import { STYLES, articlePath, defaultStyle, findStyle, formatPrice, site } from '#/config/site'
+import { DISPLAY_STYLES, STYLES, articlePath, featuredStyle, findStyle, formatPrice, site } from '#/config/site'
 import { getContent, localeFromParam, pageHead, useContent } from '#/lib/i18n'
 import { homeJsonLd, jsonLdScript } from '#/lib/seo'
 
@@ -36,9 +36,9 @@ function Home() {
   const c = useContent()
   const ex = site.examples
   const search = Route.useSearch()
-  // hero 标签和生成器共用同一个风格；SSR 默认显示默认风格（或 URL 指定的）
-  const [styleId, setStyleId] = useState<string>(search.style ?? defaultStyle.id)
-  const style = findStyle(styleId) ?? defaultStyle
+  // hero 标签和生成器共用同一个风格；SSR 默认显示主推风格（或 URL 指定的）
+  const [styleId, setStyleId] = useState<string>(search.style ?? featuredStyle.id)
+  const style = findStyle(styleId) ?? featuredStyle
   const styleCopy = (id: string) => c.styles[id as keyof typeof c.styles]
   return (
     <>
@@ -57,7 +57,7 @@ function Home() {
             </span>
             {STYLES.length > 1 ? (
               <div role="tablist" aria-label={c.generator.stepStyle} className="flex flex-wrap gap-2">
-                {STYLES.map((s) => {
+                {DISPLAY_STYLES.map((s) => {
                   const active = s.id === style.id
                   return (
                     <button
@@ -75,7 +75,7 @@ function Home() {
                         const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
                         if (!step) return
                         event.preventDefault()
-                        const next = STYLES[(STYLES.indexOf(s) + step + STYLES.length) % STYLES.length]!
+                        const next = DISPLAY_STYLES[(DISPLAY_STYLES.indexOf(s) + step + DISPLAY_STYLES.length) % DISPLAY_STYLES.length]!
                         setStyleId(next.id)
                         document.getElementById(`hero-tab-${next.id}`)?.focus()
                       }}
@@ -88,7 +88,8 @@ function Home() {
               </div>
             ) : null}
             <div
-              className="grid grid-cols-3 gap-3 sm:gap-4"
+              // 原片 + 样片一共 2 段时（例如双人风格只有一段样片）收窄成两列，卡片和三列时一样大
+              className={`grid gap-3 sm:gap-4 ${style.examples.aiVersions.length === 1 ? 'mx-auto w-2/3 grid-cols-2' : 'grid-cols-3'}`}
               {...(STYLES.length > 1 ? { id: 'hero-panel', role: 'tabpanel', 'aria-labelledby': `hero-tab-${style.id}` } : {})}
             >
               <VideoCard key={`${style.id}-original`} video={style.examples.original.video} poster={style.examples.original.poster} label={c.hero.original} credit={style.examples.original.credit} />
@@ -217,7 +218,7 @@ function Home() {
           </div>
           {/* 每种风格各一行（服务端渲染，不依赖 JS）；单风格时不显示风格名 */}
           <div className="space-y-10">
-            {STYLES.map((s) => (
+            {DISPLAY_STYLES.map((s) => (
               <div key={s.id} className="space-y-3" data-testid={`made-with-${s.id}`}>
                 {STYLES.length > 1 ? (
                   <p className="text-sm">
@@ -257,6 +258,24 @@ function Home() {
           </LocalLink>
         </div>
       </section>
+
+      {/* Specs：一行一个事实，方便搜索和 AI 直接引用 */}
+      {c.specs ? (
+        <section id="specs" className="scroll-mt-20 border-t border-line py-20">
+          <div className="container-page max-w-3xl">
+            <p className="eyebrow text-accent-text">{c.specs.eyebrow}</p>
+            <h2 className="mt-3 font-display text-4xl leading-tight sm:text-5xl">{c.specs.title}</h2>
+            <dl className="mt-10 divide-y divide-line border-y border-line">
+              {c.specs.rows.map((row) => (
+                <div key={row.label} className="grid gap-1 py-4 sm:grid-cols-[12rem_1fr] sm:gap-6">
+                  <dt className="font-semibold">{row.label}</dt>
+                  <dd className="text-muted">{row.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        </section>
+      ) : null}
 
       {/* Features */}
       <section id="features" className="scroll-mt-20 border-t border-line py-20">

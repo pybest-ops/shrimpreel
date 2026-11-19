@@ -39,6 +39,12 @@ export const site = {
     {
       // 写入 generations.template_id，发布后不要改
       id: 'neon-shuffle-v1',
+      // 双人风格（可选三项，都不写 = 单人照、用 VIDEO_PROVIDER、用全站 durations）：
+      //   photos: 2        要两张照片，第 1 张 = 源视频里站左边的人，第 2 张 = 右边的人。需要支持多图的服务商，目前只有 nanoapi，所以必须同时写 provider: 'nanoapi'
+      //   provider: '...'  这个风格固定走某个服务商（'fal' | 'yir' | 'nanoapi'），覆盖 VIDEO_PROVIDER；用到的服务商密钥也要配齐（config-health 会检查）
+      //   durations: [...] 这个风格自己的时长档位，替换全站 durations，格式同 durations（{ id, seconds, credits, isFull? }）。
+      //                    id 写入 generations.duration_id，全站（含 durations 和所有风格）不能重复，发布后不要改
+      // 下面的 sources 和 music 的键 = 这个风格实际用的时长档位 id（有 durations 时是它自己的 id）
       // 键 = durations[].id，每个档位都要有
       sources: { short: 'neon-shuffle-v1-6s.mp4', medium: 'neon-shuffle-v1-12s.mp4', full: 'neon-shuffle-v1-18s.mp4' },
       // 这种风格的 prompt，覆盖 video.yir.prompt 和 video.nanoapi.prompt；null = 用默认
@@ -53,6 +59,10 @@ export const site = {
       // target 用英文描述源视频里要被替换的那个人（外貌、服装、位置），prompt 按用户实际填了的位置拼出来，此时 prompt 字段不再使用。
       // 位置的名称和提示写在 src/content/<locale>.ts 的 styles[id].seats；null = 只传一张照片
       seats: null as readonly StyleSeat[] | null,
+      // 背景音乐（可选）：键 = durations[].id，值 = seed/templates/ 里的 .m4a（AAC）文件名，和源视频一样上传到 R2 的 templates/。
+      // 每个档位一段，时长等于档位且结尾自带淡出；设了就替换成片原有的音轨（成片存进 R2 后在服务端混流，视频不重编码）。
+      // null = 成片保持服务商原样。键是否覆盖所有档位由 tests/unit/styles.test.ts 核对（类型上不能引用 durations，会循环）。音乐必须拥有商用授权（例如自己生成、条款允许商用的 AI 音乐），不能用别人的歌。
+      music: null as Readonly<Record<string, string>> | null,
       // 首页展示素材（public/demo/）。换成真实素材时必须拥有授权，credit 写原作者，例如 '@handle · TikTok'。
       examples: {
         original: { video: '/demo/original.mp4', poster: '/demo/original.jpg', credit: 'Demo clip · original' },
@@ -64,6 +74,9 @@ export const site = {
       },
     },
   ],
+  // 主推风格：首页 hero 标签和生成器默认选中它、排在最前面（例如新出的趋势风格）。
+  // null = 默认风格（styles[0]）。只影响界面，请求不带 styleId 时仍用默认风格。
+  featuredStyleId: null as string | null,
 
   // 全站共用的首页展示素材
   examples: {
@@ -170,6 +183,11 @@ export const site = {
   upload: {
     maxBytes: 10 * 1024 * 1024,
     contentTypes: ['image/jpeg', 'image/png', 'image/webp'],
+    // 参考图尺寸限制：模板自带的服务商（yir、fal、nanoapi）都走 Kling Motion Control，Kling 要求参考图宽高都不小于 300px、
+    // 长宽比在 1:2.5 到 2.5:1 之间（https://kling.ai/document-api/api/video/motion-control.md ）。超出的照片任务会先被接受、
+    // 到上游再失败，所以浏览器和上传接口按这两个值提前拦下，提示用户换一张。换了视频服务商按它的限制调
+    minSide: 300,
+    maxRatio: 2.5,
   },
 
   // 数据保留（天）：Cron 到期删除 R2 对象并标记 expired；隐私政策与个人中心按这里的值展示。
@@ -188,15 +206,32 @@ export const site = {
     enabled: true,
   },
 
+  // 成片机器可读 AI 标记：开启后成片末尾写入 XMP 元数据（生成方、模型、创建时间、视频 ID），并提供 /verify 验证页和 GET /api/verify/:id。
+  // 欧盟 AI Act 第 50(2) 条要求面向欧盟用户的 AI 生成内容带机器可读标记；加州 SB 942 只约束月访问量超过 100 万的服务商。
+  // 默认关闭，由站点按受众决定；关闭时成片保持原样，/verify 与接口返回 404，页脚、sitemap 和条款里也不再提
+  aiMetadata: {
+    enabled: false as boolean,
+  },
+
+  // Stripe 早期欺诈预警（actionable）时是否自动经支付商全额退掉剩余金额并立即回收剩余积分，避免之后的拒付。
+  // 默认开启；设为 false 时只通知管理员，由管理员在后台核对后手动退款
+  fraudWarningAutoRefund: true as boolean,
+
+  // CSP 是否仅上报（Report-Only）。上线观察 [csp] 日志无误报后改为 false 即可切到强制执行 Content-Security-Policy
+  cspReportOnly: true as boolean,
+
   // SEO 文章（指南），按展示顺序排列。slug 是根路径：/<slug> 与 /zh/<slug>；正文在 src/content/<locale>.ts 的 articles[key]。
   // 新增文章：这里加一项，各语言 content 的 articles 补同名 key（缺了 typecheck 会报错）。
   // trend、howTo 两篇被首页直接链接，不要删。related 不填时推荐其余文章里最近更新的。
   // 日期写进 Article 的 datePublished/dateModified、页面上的“最后更新”和 sitemap lastmod，改正文时同步改 updatedAt
   // cover 可选：public/ 下 1200×630 的图片路径，用在列表卡片、文章顶部、og:image 和 Article 的 image；
   // 用 scripts/article-cover.mjs 从站点自己的视频截帧生成（带标题、标签，可选多种版式）。不填时卡片没有图，og:image 用站点默认图
+  // style 可选：填 styles[].id，文章页在导语后显示该风格的原片和 AI 样片，文末按钮跳到 /?style=<id>#create 预选风格；id 不存在就当没填
+  // 文章正文的 faq 可选（content 的 articles[key].faq）：有就在正文后渲染折叠问答并输出 FAQPage 结构化数据
+  // 段落的 table 可选（sections[i].table，{ head, rows }）：渲染在该段文字之后，第一列作行标题，适合对比表和规格表；窄屏横向滚动
   articles: [
     { key: 'trend', slug: 'neon-shuffle-ai-trend', publishedAt: '2026-10-20', updatedAt: '2026-10-20', cover: '/guides/neon-shuffle-ai-trend.jpg' },
-    { key: 'howTo', slug: 'how-to-make-neon-shuffle-ai-video', publishedAt: '2026-10-20', updatedAt: '2026-10-20' },
+    { key: 'howTo', slug: 'how-to-make-neon-shuffle-ai-video', publishedAt: '2026-10-20', updatedAt: '2026-10-20', style: 'neon-shuffle-v1' },
   ],
 
   seo: {
@@ -214,6 +249,9 @@ export const site = {
     sameAs: [] as string[],
     // 页面上有真实免费档时为 true：结构化数据的最低价写 0，并列出免费 Offer
     hasFreeTier: false as boolean,
+    // /llms.txt 的 Key facts 末尾追加的英文事实句（可选）：配置推不出来、AI 又常说错的事，
+    // 例如能不能用宠物照片、和名字相近的站点不是一家。只写站内文案已经承诺的事，每句以句号结尾
+    llmsFacts: [] as string[],
     ogImageSize: { width: 1200, height: 630 },
   },
 
@@ -224,13 +262,16 @@ export const site = {
   // 填了 ga4Id 才启用 GA4：同时出现同意横幅和页脚“Cookie 设置”，访客接受前不加载 gtag.js（Consent Mode v2 basic 模式，见 lib/consent.ts）。
   // 填了 umamiWebsiteId 就在所有页面加载同域的 Umami 脚本（/s/script.js，由 Worker 代理，实例地址在 vars.UMAMI_ORIGIN，不进前端）；
   // Umami 不写 Cookie，不受同意横幅控制。
-  // 隐私政策的“Cookie 与统计”一节按这三项自动调整
+  // 填了 clarityId（Microsoft Clarity 项目 ID）就在正式域名上录制访客会话，同样会出现同意横幅；
+  // 访客接受前以无 Cookie 模式录制，接受后才写 Cookie（见 lib/consent.ts）。
+  // 同意横幅只对欧洲经济区、英国、瑞士和无法判断国家的访客自动弹出，其他地区默认同意、可在页脚拒绝（按 cf-ipcountry 判断）。
+  // 隐私政策的“Cookie 与统计”一节按这几项自动调整
   analytics: {
-    // Clarity 项目 ID；留空不加载，填写后只在正式域名及子域执行官方脚本。
-    clarityId: '',
     ga4Id: '',
     cfBeaconToken: '',
     umamiWebsiteId: '',
+    // Clarity 项目 ID；留空不加载，填写后只在正式域名及子域执行官方脚本。
+    clarityId: '',
   },
 } as const
 
@@ -275,15 +316,27 @@ export interface StyleSeat {
   target: string
 }
 
+// 风格自己的时长档位（Style.durations），字段同 site.durations
+export interface StyleDuration {
+  id: string
+  seconds: number
+  credits: number
+  isFull?: boolean
+}
+
 export interface Style {
   id: string
-  sources: Readonly<Record<DurationOption['id'], string>> // 键 = durations[].id，值 = seed/templates/ 里的文件名
+  photos?: 1 | 2 // 需要几张照片，默认 1；第 1 张 = 源视频左边的人，第 2 张 = 右边的人
+  provider?: 'fal' | 'yir' | 'nanoapi' // 固定走某个视频服务商；不写 = 用 VIDEO_PROVIDER
+  durations?: readonly StyleDuration[] // 这个风格自己的时长档位，替换 site.durations；id 全站唯一
+  sources: Readonly<Record<string, string>> // 键 = 该风格的时长档位 id（styleDurations），值 = seed/templates/ 里的文件名
   prompt: string | null
   scene: StyleScene | null
   // 只有 haomao 用：参考配乐文件，键 = durations[].id
   audio?: Readonly<Record<string, string>> | null
   // 多人位置：第一项是必填的主角（照片存在 generations.upload_id），其余可选（generation_seats）
   seats?: readonly StyleSeat[] | null
+  music: Readonly<Record<string, string>> | null // 键 = durations[].id，值 = seed/templates/ 里的 .m4a 文件名；null = 不加背景音乐
   examples: {
     original: ExampleClip
     aiVersions: readonly ExampleClip[]
@@ -292,8 +345,12 @@ export interface Style {
 }
 
 export const STYLES: readonly Style[] = site.styles
-// 第一个风格是默认风格：请求不带 styleId、首页 SSR 和 SEO 都用它
+// 第一个风格是默认风格：请求不带 styleId 和首页结构化数据用它
 export const defaultStyle: Style = STYLES[0]!
+// 首页和生成器默认选中的风格（site.featuredStyleId，没设或 id 不存在时是默认风格）
+export const featuredStyle: Style = (site.featuredStyleId === null ? undefined : findStyle(site.featuredStyleId)) ?? defaultStyle
+// 界面上的风格顺序：主推风格在前，其余按 site.styles 的顺序
+export const DISPLAY_STYLES: readonly Style[] = [featuredStyle, ...STYLES.filter((s) => s !== featuredStyle)]
 
 // 配了多人位置的风格 id：上线检查要求视频服务商支持多张参考图
 export const seatStyleIds: readonly string[] = STYLES.filter((s) => s.seats?.length).map((s) => s.id)
@@ -304,6 +361,19 @@ export function findStyle(id: string): Style | undefined {
 
 export function findDuration(id: string) {
   return site.durations.find((d) => d.id === id)
+}
+
+export function stylePhotoCount(style: Style): 1 | 2 {
+  return style.photos ?? 1
+}
+
+// 风格实际可选的时长档位：自己配了用自己的，否则用全站的
+export function styleDurations(style: Style): readonly StyleDuration[] {
+  return style.durations ?? site.durations
+}
+
+export function findStyleDuration(style: Style, id: string): StyleDuration | undefined {
+  return styleDurations(style).find((d) => d.id === id)
 }
 
 export function findPackage(id: string) {
@@ -348,6 +418,7 @@ export interface Article {
   updatedAt: string
   related?: readonly ArticleKey[]
   cover?: string
+  style?: string
 }
 export const ARTICLES: readonly Article[] = site.articles
 

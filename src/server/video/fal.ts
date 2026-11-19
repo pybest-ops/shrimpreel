@@ -16,16 +16,18 @@ export function createFalProvider(env: Env): VideoProvider {
   return {
     id: 'fal',
     async submit(input) {
+      if (input.imageUrls.length > 1) throw new VideoProviderError('multi_photo_unsupported', 'fal takes one photo', false)
       const url = new URL(`https://queue.fal.run/${site.video.falModel}`)
       url.searchParams.set('fal_webhook', input.webhookUrl)
       const response = await fetch(url, {
         method: 'POST',
-        headers: headers(),
+        headers: { ...headers(), 'Idempotency-Key': input.generationId },
         body: JSON.stringify({
           video_url: input.sourceVideoUrl,
-          image_url: input.imageUrl,
+          image_url: input.imageUrls[0],
           resolution: site.video.resolution,
         }),
+        signal: AbortSignal.timeout(25_000),
       })
       const body = (await response.json().catch(() => null)) as {
         request_id?: string
@@ -50,17 +52,19 @@ export function createFalProvider(env: Env): VideoProvider {
       const statusUrl = String(meta.statusUrl ?? '')
       const responseUrl = String(meta.responseUrl ?? '')
       if (!statusUrl || !responseUrl) return { state: 'failed', code: 'missing_meta', message: 'fal urls missing' }
-      const statusResponse = await fetch(statusUrl, { headers: headers() })
+      const statusResponse = await fetch(statusUrl, { headers: headers(), signal: AbortSignal.timeout(25_000) })
       if (!statusResponse.ok) {
         throw new VideoProviderError(`fal_status_${statusResponse.status}`, 'fal status failed', isRetryableStatus(statusResponse.status))
       }
       const status = (await statusResponse.json()) as { status?: string; error?: string; error_type?: string }
       if (status.status === 'IN_QUEUE' || status.status === 'IN_PROGRESS') return { state: 'pending' }
-      if (status.status !== 'COMPLETED') return { state: 'pending' }
       if (status.error) {
         return { state: 'failed', code: status.error_type ?? 'fal_error', message: status.error.slice(0, 500) }
       }
-      const resultResponse = await fetch(responseUrl, { headers: headers() })
+      if (status.status !== 'COMPLETED') {
+        throw new VideoProviderError('fal_unexpected_status', `unexpected fal status: ${String(status.status ?? 'unknown')}`, false)
+      }
+      const resultResponse = await fetch(responseUrl, { headers: headers(), signal: AbortSignal.timeout(25_000) })
       const result = (await resultResponse.json().catch(() => null)) as {
         video?: { url?: string }
         detail?: unknown

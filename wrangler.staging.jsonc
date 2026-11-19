@@ -9,11 +9,12 @@
   "compatibility_date": "2026-06-19",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
-  "observability": { "enabled": true },
+  "observability": { "enabled": true, "head_sampling_rate": 0.1 },
+  "limits": { "cpu_ms": 30000 },
   "assets": {
     "directory": "./dist/client",
     "binding": "ASSETS",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*", "/demo/*.mp4"]
   },
   "vars": {
     // staging 按生产行为运行（禁用 mock 和开发登录），但 robots.txt 禁止抓取
@@ -40,7 +41,9 @@
     // Umami 实例地址（不带路径的 https origin，如 https://umami.example.com）；留空 = 不代理。只在 Worker 端使用，不进前端
     "UMAMI_ORIGIN": "",
     // 有 OPENAI_API_KEY 后改为 openai
-    "MODERATION_PROVIDER": "none"
+    "MODERATION_PROVIDER": "none",
+    // 成片输出审核：frames | off。frames 需要 "media": { "binding": "MEDIA_TRANSFORM" } 绑定，见 wrangler.jsonc 的说明
+    "OUTPUT_MODERATION": "off"
   },
   "d1_databases": [
     {
@@ -57,7 +60,7 @@
     "consumers": [
       {
         "queue": "video-template-staging-jobs",
-        "max_batch_size": 5,
+        "max_batch_size": 1,
         "max_batch_timeout": 2,
         "max_retries": 10,
         "dead_letter_queue": "video-template-staging-jobs-dlq"
@@ -68,7 +71,8 @@
   "ratelimits": [
     { "name": "UPLOAD_LIMITER", "namespace_id": "58111", "simple": { "limit": 20, "period": 60 } },
     { "name": "GENERATE_LIMITER", "namespace_id": "58112", "simple": { "limit": 10, "period": 60 } },
-    { "name": "AUTH_LIMITER", "namespace_id": "58113", "simple": { "limit": 30, "period": 60 } }
+    { "name": "AUTH_LIMITER", "namespace_id": "58113", "simple": { "limit": 30, "period": 60 } },
+    { "name": "PUBLIC_LIMITER", "namespace_id": "58114", "simple": { "limit": 60, "period": 60 } }
   ],
   "send_email": [{ "name": "EMAIL" }],
   "triggers": { "crons": ["*/5 * * * *"] }

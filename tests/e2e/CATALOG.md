@@ -7,6 +7,33 @@
 
 用例写成 `文件` › `标题`。`tests/unit/catalog.test.ts` 会双向核对：这里引用的标题必须存在，`tests/e2e` 和 `tests/sandbox` 里的每个用例也必须在这里出现。新增、改名或删除用例时要同步更新本文件。
 
+## 改哪里跑哪些
+
+改动过程中只跑相关的 spec 和 `smoke.spec.ts`，例如 `E2E_PORT=3200 npx playwright test tests/e2e/payments.spec.ts tests/e2e/smoke.spec.ts`；完整 e2e 的时机见 AGENTS.md 的“测试”。下表按改动位置列出该跑的 spec，跨多行的改动取并集；表里找不到对应位置时跑完整 e2e。
+
+| 改动位置 | spec |
+| --- | --- |
+| `src/server/orders.ts`、`src/server/payments/`、`src/server/reconcile.ts`、价格页、`checkout/` | `payments`、`reconcile`、`subscriptions`、`referrals`、`email` |
+| `src/server/subscriptions.ts` | `subscriptions` |
+| `src/server/credits.ts`、`src/server/redeem.ts`、`src/server/referrals.ts` | `credits`、`generation`、`payments`、`redeem`、`referrals`、`subscriptions` |
+| `src/server/jobs.ts`、`src/server/media.ts`、`src/server/video/`、`src/server/moderation.ts`、生成器组件 | `generation`、`credits`、`compliance`、`phone-upload`、`ai-label`、`photo-size` |
+| `src/server/xmp.ts`、`src/server/output-moderation.ts`、`src/lib/xmp.ts`、`verify` 页、`/api/verify` | `ai-label`、`generation`、`seo` |
+| `src/server/handoff.ts`、`src/lib/photo-draft.ts`、`phone-upload` 页 | `phone-upload`、`photo-size` |
+| `src/lib/prepare-photo.ts`、`site.upload` | `photo-size`、`generation`、`phone-upload` |
+| `src/server/retention.ts`、`src/server/takedown.ts`、`src/server/account-export.ts`、`/report` | `compliance`、`share`、`email` |
+| `src/server/shares.ts`、`v.$shareId` 页 | `share` |
+| `src/server/admin.ts`、`src/server/reports.ts`、`src/routes/admin/` | `admin`、`data-management`、`attribution` |
+| `src/server/settings.ts`、`src/server/runtime-config.ts`、`src/server/probes.ts` | `settings` |
+| `src/server/auth.ts`、`src/server/google.ts`、`sign-in` 页 | `sign-in`、`admin` |
+| `src/server/email.ts`、`src/server/email-templates.ts`、`src/server/resend.ts` | `email` |
+| `src/server/alerts.ts`、`src/server/client-error.ts`、错误页、`src/lib/translate-guard.ts` | `alerts`、`client-errors` |
+| `src/server/csp.ts`、页面里的内联脚本 | `security-headers` |
+| `src/server/attribution.ts`、`src/lib/consent.ts` | `attribution` |
+| `src/server/seo.ts`、`src/content/*`、`src/config/site.ts`、页面路由和布局 | `seo` |
+| `dashboard/` 页 | `data-management`、`settings`、`share` |
+
+只改文档、`scripts/` 或单元测试时不用跑 e2e。
+
 e2e 跑在本地 dev server 上，支付、视频、审核服务商都是 mock，用 `/api/dev/*` 模拟 Cron 和死信消费者。真实支付商的收银台由 `tests/sandbox` 手动验收，见“支付商 sandbox”；其他真实服务商的对接只有单元测试，见文末。
 
 ## P0 资金与积分
@@ -48,6 +75,14 @@ e2e 跑在本地 dev server 上，支付、视频、审核服务商都是 mock�
 - `data-management.spec.ts` › `后台订单详情：搜索进入、金额校验失败可重试、部分退款与补单后时间线完整`
   - 超过可退金额时前端拦下，订单不变；改后的部分退款按比例回收积分；失败订单补单后发放积分，时间线有补单记录。
 
+### 支付争议（拒付）
+
+- `payments.spec.ts` › `支付争议：opened 回收积分、重复投递不重复回收，won 补回；另一单 lost 记为全额退款，后台详情显示争议`
+  - opened 回收订单全部积分（流水 `dispute`），同一事件重放和同一争议的新事件都是 duplicate；won 原样补回（流水 `dispute_won`）、订单回到普通 paid，重复 won 不再补；另一单 opened → lost 后订单为 refunded、已退积分等于回收量、余额不变；后台订单详情显示“争议败诉”。
+
+- `payments.spec.ts` › `欺诈预警（fraudWarningAutoRefund 默认关闭）：不退款，订单与余额不变，管理员收到“未自动退款”的通知`
+  - 只在 `site.fraudWarningAutoRefund` 为 false 时运行：mock `fraud_warning` 事件返回 processed 且 note 写明未自动退款，重放为 duplicate；订单仍是 paid、退款额与退款积分为 0，余额不变；管理员发件箱恰有一封 `admin_dispute`（stage `fraud_warning`，detail 含“未自动退款”）。开启后的自动退款路径由 `disputes.test.ts` 覆盖。
+
 ### 支付失败
 
 - `payments.spec.ts` › `支付失败：结果页显示失败，订单 failed，余额不变`
@@ -55,6 +90,10 @@ e2e 跑在本地 dev server 上，支付、视频、审核服务商都是 mock�
 ### 生成扣费与退款
 
 - `generation.spec.ts` › `余额不足返回 402，不产生任务也不产生流水`
+- `generation.spec.ts` › `单人风格收到两张照片返回 400 invalid_upload，不扣积分也不产生任务`
+  - 默认（单人）风格带两个 `uploadIds` 返回 `invalid_upload`，余额不变、没有任务。
+- `generation.spec.ts` › `选双人风格：两个照片槽，少一张不能生成；两张上传后用 mock 生成成功，扣该风格时长的积分；API 只给一张返回 400`
+  - 只在 `site.styles` 里有 `photos: 2` 的风格时运行（模板默认没有，会跳过）：出现 `photo-input-2` 和该风格自己的时长卡片；只放一张时生成按钮禁用，两张后 mock 生成成功，扣的是该风格时长档位的积分；双人风格只给一张 `uploadIds` 返回 `invalid_upload`，余额不变。
 - `generation.spec.ts` › `生成失败自动退回积分，失败任务没有视频`
   - 流水依次为 −full 档积分、+full 档积分；失败任务的 video 接口返回 404。
 - `generation.spec.ts` › `并发轮询只落库一次、成片不被误删；后台记录服务商成本与毛利，未出片的失败任务不记成本`
@@ -62,9 +101,11 @@ e2e 跑在本地 dev server 上，支付、视频、审核服务商都是 mock�
 - `generation.spec.ts` › `风格：不带 styleId 用默认风格，不存在的风格返回 400 invalid_style 且不扣积分`
   - 不存在的 styleId 返回 `invalid_style`，余额不变、没有任务；不带 styleId 时 `templateId` 是默认风格，扣 short 档积分。
 - `generation.spec.ts` › `首页切换 hero 标签与生成器同步，选第二个风格生成，记录里是所选风格；?style= 可预选`
-  - 只在 `site.styles` 多于一个时运行（模板默认一个，会跳过）：hero 标签与生成器选中项同步，方向键切标签，“Made with”每个风格一行；所选风格写入 `templateId`；`?style=` 预选，无效 id 回到默认风格。
+  - 只在 `site.styles` 多于一个时运行（模板默认一个，会跳过）：首页默认选中主推风格（`site.featuredStyleId`，没设就是默认风格）且它的标签排第一，hero 标签与生成器选中项同步，方向键切标签，“Made with”每个风格一行；所选风格写入 `templateId`；`?style=` 预选，无效 id 回到主推风格。
 - `generation.spec.ts` › `多人位置：可选位置一起生成；未知位置、重复照片返回 400 且不扣积分`
   - 只在有风格配了 `seats` 时运行（模板默认没有，会跳过）：把主角位置当作可选位置提交返回 `invalid_seat`，可选位置用主角同一张照片返回 `duplicate_photo`，两者都不扣积分；正常提交扣最长时长的积分并出片。
+- `ai-label.spec.ts` › `成片输出审核不通过：不交付成片，任务失败并退回积分；开启 aiMetadata 时验证接口也查不到`
+  - 生成请求带 `mockOutcome: 'output_reject'`（仅 mock 视频商、非生产）：视频出片成功但输出审核判拒，任务 `failed`、`error_code = output_moderation_rejected`、`refunded`，流水为 −short 档、+short 档，余额回到购买量；成片接口 404；不依赖 `aiMetadata` 开关，开启时 `/api/verify/:id` 返回 `found:false`，关闭时返回 404。
 - `alerts.spec.ts` › `死信：任务判失败并只退一次积分；健康检查告警，同一时间桶重复执行不重发`
   - 死信消费者重复处理同一条消息（或和轮询并发）时，积分只退一次。
 
@@ -175,12 +216,19 @@ e2e 跑在本地 dev server 上，支付、视频、审核服务商都是 mock�
 ## P0 合规与用户数据
 
 - `compliance.spec.ts` › `举报下架：匿名在 /report 举报 → 管理员下架 → 同一原图的全部视频删除、再次上传被拦截，其它视频不受影响`
-  - 举报校验失败不入库；只给出下载文件名也能定位视频。管理员下架后，同一原图的 2 条视频返回 410 `media_removed`，无关视频仍可播放；同一张图再上传返回 422；已处理的举报再处理返回 409；审计记下架数量。
+  - 举报校验失败不入库（含缺电子签名返回 400 `invalid_report`），后台待处理列表显示签名；只给出下载文件名也能定位视频。管理员下架后，同一原图的 2 条视频返回 410 `media_removed`，无关视频仍可播放；同一张图再上传返回 422；已处理的举报再处理返回 409；审计记下架数量。
+- `generation.spec.ts` › `创建生成必须带 consent: true，缺失、为假或不是布尔值都返回 400 且不扣积分`
+  - 四种非 true 的值都返回 400 `consent_required`，积分不变，不产生任务。
 - `compliance.spec.ts` › `上传审核不通过返回 422，不落盘；之后正常图片仍可上传`
 - `compliance.spec.ts` › `数据保留：进行中任务的原图不清理；到期后原图不能再用、成片按期过期，个人中心显示已过期`
   - 任务进行中的原图不清理；原图 7 天后过期，不能再用来生成；成片 30 天后过期，返回 410 `media_expired`；重复清理不会重复处理。
 - `compliance.spec.ts` › `导出我的数据：设置页下载 JSON，含本人全部记录；不含他人数据和内部字段；未登录与注销后 401`
   - 导出包含账户、订单、流水、上传、生成、留言、举报和邮件；不含他人的订单、举报和邮箱，也不含 R2 路径、`provider_request_id`、邮件参数等内部字段；响应头为 `private, no-store`；注销后返回 401。
+- `ai-label.spec.ts` › `开关 aiMetadata 开启：成片末尾带 XMP 标记；验证页识别它，剥掉标记、删除记录后分别提示没有标记、没有记录；接口不泄露用户信息`
+  - 只在 `site.aiMetadata.enabled` 为 true 时运行（模板默认关闭会跳过）。下载的成片最后一个顶层 box 是 XMP `uuid` box（只有一个），含生成 id 和 `trainedAlgorithmicMedia`，不含邮箱和用户 id；追加后 Range 读取仍正确；`/api/verify/:id` 只返回 `found`、`brand`、`createdAt`、`model`、`provider`，不存在、超长 id 和已删除的答案相同（`found:false`）。
+  - `/verify` 页在浏览器里读文件：带标记 → 匹配并显示生成方和 id；`?id=` 链接直接查记录；去掉标记的文件提示没有找到（说明重新压缩会丢元数据）；删除记录后同一文件提示没有匹配的记录；`/zh/verify` 可用。
+- `ai-label.spec.ts` › `开关 aiMetadata 关闭（模板默认）：成片没有 XMP；/verify、验证接口 404；页脚没有验证链接；sitemap 不含 /verify`
+  - 只在 `aiMetadata.enabled` 为 false 时运行：下载的成片顶层 box 里没有 XMP `uuid`；`/api/verify/:id` 对真实 id 和任意 id 都返回 404 `not_found`；`/verify`、`/zh/verify` 返回 404；页脚没有 `/verify` 链接；`sitemap.xml` 不含 `/verify`。
 - `email.spec.ts` › `留言只提醒管理员、不给留言人发信；注销账号清掉该用户的发件记录`
   - 注销账号后发件记录被清除；不给留言人发信，避免被用来给任意地址发邮件。
 - `share.spec.ts` › `公开分享：个人中心开启 → 匿名访客看到 noindex 的分享页和 AI 标识 → 他人无权操作 → 停止分享后旧链接 404，到期后 410`
@@ -212,6 +260,8 @@ e2e 跑在本地 dev server 上，支付、视频、审核服务商都是 mock�
 - `client-errors.spec.ts` › `全局异常和未处理的 Promise 拒绝各报一次：带编号、页面地址不带 query；重复错误只报一次，每页最多 5 条，跨域 Script error 不报`
 - `client-errors.spec.ts` › `渲染出错时显示错误页和错误编号，编号与上报一致；接口恢复后点重试回到正常页面`
 - `client-errors.spec.ts` › `上报接口不要求同源、只回 204；非 JSON 或超大的上报直接丢弃`
+- `client-errors.spec.ts` › `浏览器翻译防护：参照节点被包进翻译的 <font> 后，插入 / 删除不抛 NotFoundError、顺序不乱`
+  - 页面里造「参照节点被挪进 <font>」再 insertBefore / removeChild：不抛错，插入位置在 <font> 前；`src/lib/translate-guard.ts` 没装就会 NotFoundError（开着 Chrome 整页翻译选照片后页面变错误页）
 
 ## P1 安全响应头
 
@@ -228,6 +278,8 @@ e2e 跑在本地 dev server 上，支付、视频、审核服务商都是 mock�
 - `seo.spec.ts` › `页脚“问问 AI”：SSR 中带 nofollow 链接，中文站用中文提问并附 llms.txt，llms.txt 可访问`
 - `seo.spec.ts` › `文章封面：卡片和文章顶部显示，og:image 与 Article.image 用封面，SPA 切换后不残留；没填的用默认图`
   - 每个 `cover` 文件都能访问（路径写错即失败）；SSR 只有一个 `og:image` 且宽高声明在它后面；列表 → 文章 → 列表走 SPA 导航后 `og:image` 先换成封面、再恢复默认图。
+- `seo.spec.ts` › `文章可选能力：绑定风格显示样片并预选风格、带 FAQ 输出 FAQPage、段落表格；没填的文章不变`
+  - 带 `style` 的文章（中英各一）在导语后显示该风格的原片 + AI 样片（视频数一致），文末 CTA 为 `/?style=<id>#create`；带 `faq` 的文章显示折叠问答（可展开）且只输出一个 FAQPage，问题数与 content 一致；段落的 `table` 渲染出的表头、行数与 content 一致，首列是 `th[scope=row]`；没有 style、faq 的文章没有样片区块和 FAQPage，CTA 仍是 `/#create`。
 
 ## P1 运营与数据管理
 
@@ -253,6 +305,30 @@ e2e 跑在本地 dev server 上，支付、视频、审核服务商都是 mock�
   - 少于 3 或超过 2000 字符返回 400 `invalid_message`；未知类型落为 `feedback_other`；`page` 不是站内路径（完整 URL）时丢弃。
 - `feedback.spec.ts` › `反馈浮窗：中文页面显示中文文案`
 
+## P1 生成器草稿与手机传图
+
+- `phone-upload.spec.ts` › `访客草稿跨登录和付款保留：照片、风格、时长、授权都恢复，生成开始后草稿清除`
+  - 访客选照片、非默认风格和时长、勾授权后看到“登录后会保留”和这次视频的价格提示；本地登录跳转回来后四项都恢复，就地买包付款回到 `/#create` 后照片仍在；生成成功后刷新，生成器里没有照片。
+- `phone-upload.spec.ts` › `扫码用手机上传：手机传图后桌面面板关闭并选中照片，同一二维码不能再用；手机视口不显示入口`
+  - 桌面面板的链接带 fragment token；另一个手机视口的 context 打开链接上传，桌面 2 秒轮询取到后面板关闭、照片已选；同一 token 再传显示“已用过”；手机视口不显示入口。
+- `phone-upload.spec.ts` › `手机上传页：没有 token 提示扫码；格式不对在手机上就被拦下`
+  - 没有 token 只提示去电脑扫码；GIF 在手机上预检就被拒绝。
+- `phone-upload.spec.ts` › `手机传图接口边界：未知 token、伪装成图片的文本、一次性取走`
+  - 未知 token 的 photo 和 take 都是 410；等待中 take 返回 204；文本冒充 JPEG 返回 415 且二维码仍可用；成功后再传返回 409；take 返回原图字节且 `no-store`，再 take 是 410。
+
+## P1 照片尺寸与大图上传
+
+- `photo-size.spec.ts` › `太小、太窄太扁的照片在浏览器里就被拦下：提示换一张，不发上传请求`
+  - 100×133 提示 `photo_too_small`，320×1700 提示 `photo_bad_ratio`，期间没有发出上传请求；换成正常照片后提示消失、发出 1 次上传。
+- `photo-size.spec.ts` › `手机原图大小的照片先在浏览器里缩小：4032×3024 的 JPEG 传上去不到 2 MB，上传成功`
+  - 页面里造 4032×3024 满噪点 JPEG（>4 MB）选进上传框；上传请求的 Content-Length < 2 MB、返回 201（手机原图直接上传会让 Workers 免费计划 exceededCpu）。
+- `photo-size.spec.ts` › `上传接口兜底：太窄、太小的照片 422，正常照片 201`
+  - 直接调 `/api/uploads`：320×1700 → 422 `photo_bad_ratio`，100×133 → 422 `photo_too_small`。
+- `photo-size.spec.ts` › `手机传图接口也拦：太窄的照片 422，二维码仍可用，换正常照片能传`
+  - `/api/handoff/photo` 走同一个 `readImageFile`：窄图 422，同一 token 再传正常照片成功。
+- `photo-size.spec.ts` › `透明 PNG 缩小后是白底：长边超过 2048 的透明 PNG 重画成 JPEG，透明处不变黑`
+  - 页面里造 2400×2400 的透明 PNG（中间一块不透明）：上传 201，传上去的图缩到 2048×2048，角上透明处是白色（没铺白底时 JPEG 会是黑色）。
+
 ## 部署后巡检（tests/smoke）
 
 `npm run test:smoke` 对线上地址只读巡检（运行方法见 README 的“部署后巡检”），覆盖 e2e 无法覆盖的线上开关：
@@ -261,6 +337,7 @@ e2e 跑在本地 dev server 上，支付、视频、审核服务商都是 mock�
 - `production.spec.ts` › `跨站 POST 被 CSRF 拦下；未签名的支付与生成回调被拒`
 - `production.spec.ts` › `健康检查与未登录会话：开发登录关闭，支付商不是 mock`
 - `production.spec.ts` › `安全响应头：页面带 CSP，https 下有 HSTS，接口不带 CSP`
+- `production.spec.ts` › `演示视频支持 Safari Range 206 与 HEAD 探测`
 - 另有 sitemap 全部页面可打开、首页水合、未登录拒绝、robots 与环境一致等用例。
 
 ## 支付商 sandbox（tests/sandbox）
@@ -291,6 +368,7 @@ e2e 跑在本地 dev server 上，支付、视频、审核服务商都是 mock�
 - 支付商对接：Waffo、Dodo、Stripe 的验签（篡改、重放、时间窗、test/live 不符、密钥轮换）、事件映射和查单（`waffo.test.ts`、`dodo.test.ts`、`stripe.test.ts`）。Stripe 另测验签后按固定 API 版本重取对象、折扣与少付、订阅首付以 `invoice.paid` 为准、退款按 `re_` 幂等。
 - 退款规则：比例与四舍五入、按币种换算、退款单号格式、各支付商的退款期限、金额与商品核对（`refunds.test.ts`）。
 - 积分账务：先到期先扣、余额不足整体回滚、明细原路退回、Cron 作废幂等、退款先扣该订单的批次、迁移前的旧余额与旧任务，每步核对流水之和 = 缓存余额 = 批次剩余之和（`credits.test.ts`，在 `node:sqlite` 上执行全部迁移）。
+- 支付争议：Stripe（`charge.dispute.created` / `closed`、`radar.early_fraud_warning.created`，payment_intent 为空时经 Charge 补上）和 Dodo（`dispute.*`）的事件映射；opened 回收 / 重复不重复回收、被花掉的积分扣到 0、开启期间退款不二次回收、won / closed 补回、部分退款后胜诉不补、lost 不二次回收、事件乱序、争议先于付款抛错重试、欺诈预警在开关关闭时只通知不退款、开启时触发全额退款及其失败分支；管理员提醒邮件渲染（`disputes.test.ts`，每步核对余额 = 批次剩余之和 = 流水之和）。
 - 兑换码：码的生成、展示与输入规范化；兑换后的批次与有效期，重复、用完、停用、截止的错误码；预检查之后状态变化（并发用完、刚被停用）由 batch 内断言兜底（`redeem.test.ts`）。
 - 邀请奖励：邀请码规范化、IP 加盐哈希（IPv6 按 /64）；邀请人被封禁或注销、30 天奖励上限（已回收的也计入）；同一被邀请人两单并发入账只发一次、两笔退款并发只回收一次、邀请人已花掉的最多扣到 0（`referrals.test.ts`）。
 - 订阅：日历月相加（月末、闰年）、年付补发窗口与跳过已过期的月份；首付、续费订单号派生、续费金额核对、逾期恢复；首付不带周期时状态事件校正周期，当期积分的到期时间一起对齐；状态事件按发生时间防乱序、到期取消且当期结束后不再算有效订阅；退款只回收订阅批次并停止补发；Dodo、Waffo 订阅事件的映射（`subscriptions.test.ts`；Stripe 的在 `stripe.test.ts`）。
@@ -300,8 +378,10 @@ e2e 跑在本地 dev server 上，支付、视频、审核服务商都是 mock�
 - 发信重试：临时错误退避、永久错误不重试，邮件头注入（`email.test.ts`）。
 - 生产开关：生产和预发拒绝 mock（`providers.test.ts`）、弱 `SESSION_SECRET`（`security.test.ts`）、上线配置与 doctor（`config-health.test.ts`）、预发配置与 robots（`staging.test.ts`）。
 - 登录：Google 授权码流程的 PKCE 与 nonce、One Tap 的 nonce（`google.test.ts`）；账号以 Google `sub` 为准、注销过的邮箱重新注册不发赠送（`auth.test.ts`）。
+- 成片 AI 标记与输出审核：XMP box 的大小、UUID 与可解析性，`size=0` 的末尾 box 跳过并 warn，二次调用不重复追加，读取后对象被覆盖时放弃追加；抽帧时间点、逐帧审核、任一帧拒绝即停、审核服务 503 向上抛（队列重试）、`MODERATION_PROVIDER=none` 跳过、缺绑定或抽帧失败不放行；轮询到成片后拒绝则删成片并退积分、通过则追加 XMP（`xmp.test.ts`、`output-review.test.ts`；上线检查规则在 `config-health.test.ts`）。
 - 成片下载：服务商返回的成片超过大小上限时不写 R2，没有 Content-Length 时边读边计数（`output-download.test.ts`）。
 - 运维：D1 导出的 SQL 转义与备份文件命名（`backup.test.ts`）；付款即时通知按 webhook 地址识别 Telegram、飞书、Discord，报错里不带地址（`chat-notify.test.ts`）。
+- 手机传图的中转清理：只删上传超过 1 小时的 `handoff/` 对象，分页列出（`handoff.test.ts`）。
 - 其他：告警阈值与时间桶（`alerts.test.ts`）、归因解析与 CSV 公式注入（`attribution.test.ts`）、归因 Cookie 在同意后才写入、拒绝时删除（`attribution-consent.test.ts`）、GA4 同意与撤回（`consent.test.ts`）、错误与 CSP 报告的脱敏（`client-error.test.ts`、`csp.test.ts`）。
 
 ## 未覆盖
@@ -315,13 +395,15 @@ e2e 跑在本地 dev server 上，支付、视频、审核服务商都是 mock�
 | 登录验证码邮件的真实投递 | 本地不发信，验证码随接口返回 `devCode`；生产环境不返回 | 单元测试覆盖渲染；e2e 覆盖发码、校验、冷却和输错上限 | 上线后用非 Gmail 邮箱收一次 |
 | Google OAuth 与 One Tap 登录 | 需要真实 Google 账号，e2e 用 dev 登录 | 单元测试覆盖跳转校验、PKCE、nonce 和按 `sub` 绑定 | 线上验证随第一个热词站 |
 | Turnstile 浏览器端校验 | 需要真实站点密钥 | 服务端校验的单元测试 | 线上验证 |
+| 成片输出审核的真实抽帧（Cloudflare Media Transformations 绑定） | 绑定在本地只有 remote 模式，会连 Cloudflare 并可能计费；模板默认不声明，e2e 的 `OUTPUT_MODERATION=mock` 只验证拒绝后的失败与退款路径 | `output-review.test.ts` 用假的 `MEDIA_TRANSFORM` 验证抽帧时间点、逐帧审核和失败语义；上线检查在 `frames` 缺绑定时报错 | 热词站声明绑定、设 `OUTPUT_MODERATION=frames` 后用 staging 实测一条（含 100 MB 附近的成片和成片短于预期时长的情况） |
 | OpenAI 图片审核的真实调用 | 需要 `OPENAI_API_KEY` | e2e 用 mock 拒绝；单元测试覆盖响应解析和失败时拒绝 | 线上验证 |
 | 运营参数在线上的生效延迟 | 本地 KV 没有边缘缓存，保存后立即生效；线上 `cacheTtl` 60 秒的实际表现要在部署后看 | 保存时直接刷新 KV；单元测试覆盖缓存读写 | 线上验证随第一个热词站 |
 | fal、yir、NanoAPI、haomaotoken、OpenAI 的测试连接 | 需要真实 key | `probes.test.ts` 按文档构造响应 | 第一个热词站配好 key 后在后台点一次 |
 | 限流（`UPLOAD_LIMITER`、`GENERATE_LIMITER`、`AUTH_LIMITER`） | 要在 60 秒内打满额度；本地 binding 的计数是否和线上一致没有核实过 | 无 | 线上手工验证 |
 | Queues 真实重试与死信、Cron 真实触发 | 真实死信要重试 10 次（约 35 分钟） | 用 `/api/dev/dead-letter`、`/api/dev/sweep`、`/api/dev/health-check` 等模拟 | 无 |
-| 支付争议与拒付 | test 模式无法触发 | 不认识的事件记为 ignored（单元测试） | 遇到时再补 |
-| Cookie 同意横幅 | 模板没有填 `ga4Id`，横幅不显示 | `consent.test.ts`；归因 Cookie 的同意逻辑由 `attribution-consent.test.ts` 覆盖 | 热词站填了 `ga4Id` 后手工检查 |
+| 真实支付商的争议与欺诈预警 webhook | Stripe test 模式可用特殊卡（`4000 0000 0000 0259` 等）触发拒付，Dodo 的 test 模式触发不了；Waffo 没有公开的拒付事件，不处理 | 事件映射与入账逻辑的单元测试（按文档构造 payload，未用真实 payload 核对）；mock e2e 走同一套入账 | Stripe 沙盒带隧道时手动触发一次拒付，核对 payload 与订单关联；第一个热词站遇到真实拒付后核对 |
+| 成片 XMP 标记与 `/verify` 验证页 | 模板默认关闭 `aiMetadata`，CI 的 e2e 不覆盖 XMP 写入和验证页 | `xmp.test.ts`（写入、解析、流式追加）；站点开启后 `ai-label.spec.ts` 的开启用例自动生效 | 面向欧盟用户的站点开启后跑一次 `ai-label.spec.ts` |
+| Cookie 同意横幅 | 模板没有填 `ga4Id`，横幅不显示 | `consent.test.ts`（含按国家取默认值）；归因 Cookie 的同意逻辑由 `attribution-consent.test.ts` 覆盖 | 热词站填了 `ga4Id` 后手工检查，带 `cf-ipcountry: US` 和 `DE` 各访问一次 |
 | 分享封面截帧和社交平台预览 | Playwright 的 Chromium 不带 H.264 解码，截帧返回 null，e2e 改为直接上传 fixture 照片；社交平台抓取需要公网地址 | 服务端封面校验（长度、JPEG、审核）由 `share.spec.ts` 覆盖；截帧失败时分享页回落到站点默认 OG 图 | 热词站上线后在 Chrome、Safari 各分享一次，用平台的链接调试工具检查预览 |
 | D1 备份的线上 Cron 与恢复 | 模板不部署；本地只能用 `/api/dev/backup` 触发 | `backup.test.ts`；本地做过一次导出 → `scripts/restore-d1.mjs` 恢复的往返核对 | 热词站上线后确认 R2 每天有新文件，按 README 演练一次恢复 |
 | 付款即时通知的真实发送 | 需要真实的 Telegram、飞书或 Discord webhook | `chat-notify.test.ts` 按各平台文档构造请求 | 热词站配置 webhook 后付一单测试款 |

@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
-import { STYLES, defaultStyle, formatPrice, site } from '#/config/site'
+import { DISPLAY_STYLES, STYLES, defaultStyle, featuredStyle, formatPrice, site, styleDurations, stylePhotoCount } from '#/config/site'
 import { LONGEST, ORIGIN, PHOTO, SHORTEST, buyPackage, credits, devLogin, json, ledger, pkg, post, uniqueEmail, uploadPhoto } from './helpers'
 
 type Generation = { id: string; status: string; videoUrl: string | null; templateId: string }
@@ -14,11 +14,24 @@ const FULL = LONGEST.credits
 test('余额不足返回 402，不产生任务也不产生流水', async ({ request }) => {
   await devLogin(request, uniqueEmail('broke'))
   const { upload } = await json<{ upload: { id: string } }>(uploadPhoto(request), 201)
-  const res = await json<{ error: string }>(post(request, '/api/generations', { uploadId: upload.id, durationId: SHORTEST.id }), 402)
+  const res = await json<{ error: string }>(post(request, '/api/generations', { consent: true, uploadId: upload.id, durationId: SHORTEST.id }), 402)
   expect(res.error).toBe('insufficient_credits')
   const { generations } = await json<{ generations: Generation[] }>(request.get('/api/generations'))
   expect(generations).toHaveLength(0)
   expect(await ledger(request)).toHaveLength(0)
+})
+
+test('创建生成必须带 consent: true，缺失、为假或不是布尔值都返回 400 且不扣积分', async ({ request }) => {
+  await devLogin(request, uniqueEmail('noconsent'))
+  await buyPackage(request, 'starter')
+  const { upload } = await json<{ upload: { id: string } }>(uploadPhoto(request), 201)
+  for (const consent of [undefined, false, 'true', 1]) {
+    const res = await json<{ error: string }>(post(request, '/api/generations', { consent, uploadId: upload.id, durationId: 'short' }), 400)
+    expect(res.error).toBe('consent_required')
+  }
+  expect(await credits(request)).toBe(STARTER)
+  const { generations } = await json<{ generations: Generation[] }>(request.get('/api/generations'))
+  expect(generations).toHaveLength(0)
 })
 
 test('上传校验与越权：伪装 JPEG 返回 415，不能用别人的上传发起生成', async ({ request, playwright }) => {
@@ -31,7 +44,7 @@ test('上传校验与越权：伪装 JPEG 返回 415，不能用别人的上传�
   try {
     await devLogin(other, uniqueEmail('intruder'))
     await buyPackage(other, 'starter')
-    const res = await json<{ error: string }>(post(other, '/api/generations', { uploadId: upload.id, durationId: SHORTEST.id }), 400)
+    const res = await json<{ error: string }>(post(other, '/api/generations', { consent: true, uploadId: upload.id, durationId: SHORTEST.id }), 400)
     expect(res.error).toBe('invalid_upload')
     expect(await credits(other)).toBe(STARTER)
     // 别人的上传图片也不能直接读取
@@ -41,13 +54,25 @@ test('上传校验与越权：伪装 JPEG 返回 415，不能用别人的上传�
   }
 })
 
+test('单人风格收到两张照片返回 400 invalid_upload，不扣积分也不产生任务', async ({ request }) => {
+  await devLogin(request, uniqueEmail('twophotos'))
+  await buyPackage(request, 'starter')
+  const first = (await json<{ upload: { id: string } }>(uploadPhoto(request), 201)).upload.id
+  const second = (await json<{ upload: { id: string } }>(uploadPhoto(request), 201)).upload.id
+  const res = await json<{ error: string }>(post(request, '/api/generations', { consent: true, uploadIds: [first, second], durationId: 'short' }), 400)
+  expect(res.error).toBe('invalid_upload')
+  expect(await credits(request)).toBe(STARTER)
+  const { generations } = await json<{ generations: Generation[] }>(request.get('/api/generations'))
+  expect(generations).toHaveLength(0)
+})
+
 test('生成失败自动退回积分，失败任务没有视频', async ({ request }) => {
   test.skip(STARTER < FULL, `starter(${STARTER}) 买不起 full(${FULL})，无法构造“扣 full 再退回”`)
   await devLogin(request, uniqueEmail('refund'))
   await buyPackage(request, 'starter')
   const { upload } = await json<{ upload: { id: string } }>(uploadPhoto(request), 201)
   const { generation } = await json<{ generation: Generation }>(
-    post(request, '/api/generations', { uploadId: upload.id, durationId: LONGEST.id, mockOutcome: 'fail' }),
+    post(request, '/api/generations', { consent: true, uploadId: upload.id, durationId: LONGEST.id, mockOutcome: 'fail' }),
     201,
   )
   expect(await credits(request)).toBe(STARTER - FULL)
@@ -75,7 +100,7 @@ test('并发轮询只落库一次、成片不被误删；后台记录服务商�
   await buyPackage(request, 'starter')
   const start = async (mockOutcome: 'hang' | 'fail') => {
     const { upload } = await json<{ upload: { id: string } }>(uploadPhoto(request), 201)
-    const body = { uploadId: upload.id, durationId: SHORTEST.id, mockOutcome }
+    const body = { consent: true, uploadId: upload.id, durationId: SHORTEST.id, mockOutcome }
     return (await json<{ generation: Generation }>(post(request, '/api/generations', body), 201)).generation.id
   }
   const status = async (id: string) => (await json<{ generation: Generation }>(request.get(`/api/generations/${id}`))).generation.status
@@ -119,7 +144,7 @@ test('风格：不带 styleId 用默认风格，不存在的风格返回 400 inv
   await buyPackage(request, 'starter')
   const start = async (extra: Record<string, unknown>, status: number) => {
     const { upload } = await json<{ upload: { id: string } }>(uploadPhoto(request), 201)
-    return json<{ generation: Generation; error: string }>(post(request, '/api/generations', { uploadId: upload.id, durationId: SHORTEST.id, ...extra }), status)
+    return json<{ generation: Generation; error: string }>(post(request, '/api/generations', { consent: true, uploadId: upload.id, durationId: SHORTEST.id, ...extra }), status)
   }
 
   const bad = await start({ styleId: 'no-such-style' }, 400)
@@ -133,19 +158,23 @@ test('风格：不带 styleId 用默认风格，不存在的风格返回 400 inv
 })
 
 test.describe('多风格站点', () => {
-  test.skip(STYLES.length < 2, '站点只有一种风格')
+  // 生成流程用单人风格走；双人风格由下面的“双人风格”用例覆盖
+  // 第二个风格 = 界面上主推风格以外的第一个单人风格
+  const SECOND = DISPLAY_STYLES.slice(1).find((s) => stylePhotoCount(s) === 1)
+  test.skip(STYLES.length < 2 || !SECOND, '站点只有一种风格，或主推风格以外都是双人风格')
 
   test('首页切换 hero 标签与生成器同步，选第二个风格生成，记录里是所选风格；?style= 可预选', async ({ page }) => {
-    const second = STYLES[1]!
+    const second = SECOND!
     await devLogin(page.request, uniqueEmail('style-ui'))
     await buyPackage(page.request, 'starter')
 
-    // SSR 默认显示默认风格；点第二个标签后素材和生成器的选中项一起切换
+    // SSR 默认显示主推风格（没设就是默认风格），标签按主推在前排序；点第二个标签后素材和生成器的选中项一起切换
     await page.goto('/')
     await page.waitForLoadState('networkidle') // 等水合完成再点，否则点击落在还没绑事件的 SSR 按钮上
     await expect(page.getByRole('tablist')).toBeVisible()
-    await expect(page.getByTestId(`hero-tab-${defaultStyle.id}`)).toHaveAttribute('aria-selected', 'true')
-    await expect(page.getByTestId(`style-${defaultStyle.id}`)).toHaveAttribute('aria-checked', 'true')
+    await expect(page.getByRole('tab').first()).toHaveAttribute('data-testid', `hero-tab-${featuredStyle.id}`)
+    await expect(page.getByTestId(`hero-tab-${featuredStyle.id}`)).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByTestId(`style-${featuredStyle.id}`)).toHaveAttribute('aria-checked', 'true')
     await page.getByTestId(`hero-tab-${second.id}`).click()
     await expect(page.getByTestId(`hero-tab-${second.id}`)).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByTestId(`style-${second.id}`)).toHaveAttribute('aria-checked', 'true')
@@ -156,11 +185,12 @@ test.describe('多风格站点', () => {
     // 键盘：方向键在标签间移动并选中
     await page.getByTestId(`hero-tab-${second.id}`).focus()
     await page.keyboard.press('ArrowLeft')
-    await expect(page.getByTestId(`hero-tab-${STYLES[0]!.id}`)).toHaveAttribute('aria-selected', 'true')
+    const prev = DISPLAY_STYLES[(DISPLAY_STYLES.indexOf(second) - 1 + DISPLAY_STYLES.length) % DISPLAY_STYLES.length]!
+    await expect(page.getByTestId(`hero-tab-${prev.id}`)).toHaveAttribute('aria-selected', 'true')
 
     await page.getByTestId(`style-${second.id}`).click()
     await page.getByTestId('photo-input').setInputFiles(PHOTO)
-    await page.getByTestId(`duration-${SHORTEST.id}`).click()
+    await page.getByTestId(`duration-${styleDurations(second)[0]!.id}`).click()
     await page.getByTestId('consent').check()
     await expect(page.getByTestId('generate')).toBeEnabled()
     await page.getByTestId('generate').click()
@@ -172,7 +202,7 @@ test.describe('多风格站点', () => {
     await page.goto(`/?style=${second.id}`)
     await expect(page.getByTestId(`style-${second.id}`)).toHaveAttribute('aria-checked', 'true')
     await page.goto('/?style=no-such-style')
-    await expect(page.getByTestId(`style-${defaultStyle.id}`)).toHaveAttribute('aria-checked', 'true')
+    await expect(page.getByTestId(`style-${featuredStyle.id}`)).toHaveAttribute('aria-checked', 'true')
     expect(site.styles.length).toBeGreaterThan(1)
   })
 })
@@ -183,7 +213,8 @@ test('多人位置：可选位置一起生成；未知位置、重复照片返�
   test.skip(!style, '站点没有多人风格')
   const seats = style!.seats!
   test.skip(seats.length < 2, '多人风格只有主角一个位置')
-  const duration = site.durations[site.durations.length - 1]!
+  const styleDurationList = styleDurations(style!)
+  const duration = styleDurationList[styleDurationList.length - 1]!
   // 每张照片内容不同（sha256 不同），否则会被判为同一张
   const photo = () => Buffer.concat([readFileSync(PHOTO), randomBytes(16)]) as Buffer<ArrayBuffer>
   const upload = async () => (await json<{ upload: { id: string } }>(uploadPhoto(request, photo()), 201)).upload.id
@@ -196,19 +227,19 @@ test('多人位置：可选位置一起生成；未知位置、重复照片返�
   const seatId = seats[1]!.id
 
   const unknown = await json<{ error: string }>(
-    post(request, '/api/generations', { uploadId: lead, seats: { [seats[0]!.id]: extra }, durationId: duration.id, styleId: style!.id }),
+    post(request, '/api/generations', { consent: true, uploadId: lead, seats: { [seats[0]!.id]: extra }, durationId: duration.id, styleId: style!.id }),
     400,
   )
   expect(unknown.error).toBe('invalid_seat')
   const duplicate = await json<{ error: string }>(
-    post(request, '/api/generations', { uploadId: lead, seats: { [seatId]: lead }, durationId: duration.id, styleId: style!.id }),
+    post(request, '/api/generations', { consent: true, uploadId: lead, seats: { [seatId]: lead }, durationId: duration.id, styleId: style!.id }),
     400,
   )
   expect(duplicate.error).toBe('duplicate_photo')
   expect(await credits(request)).toBe(before)
 
   const { generation } = await json<{ generation: Generation }>(
-    post(request, '/api/generations', { uploadId: lead, seats: { [seatId]: extra }, durationId: duration.id, styleId: style!.id }),
+    post(request, '/api/generations', { consent: true, uploadId: lead, seats: { [seatId]: extra }, durationId: duration.id, styleId: style!.id }),
     201,
   )
   expect(await credits(request)).toBe(before - duration.credits)
@@ -218,4 +249,47 @@ test('多人位置：可选位置一起生成；未知位置、重复照片返�
       intervals: [1000],
     })
     .toBe('succeeded')
+})
+
+const DUO = STYLES.find((s) => stylePhotoCount(s) === 2)
+
+test.describe('双人风格', () => {
+  test.skip(!DUO, '站点没有双人风格（photos: 2）')
+  const longest = DUO ? styleDurations(DUO)[styleDurations(DUO).length - 1]! : null
+
+  test('选双人风格：两个照片槽，少一张不能生成；两张上传后用 mock 生成成功，扣该风格时长的积分；API 只给一张返回 400', async ({ page }) => {
+    const duo = DUO!
+    const cost = longest!.credits
+    test.skip(STARTER < cost, `starter(${STARTER}) 买不起 ${longest!.id}(${cost})`)
+    await devLogin(page.request, uniqueEmail('duo'))
+    await buyPackage(page.request, 'starter')
+
+    await page.goto('/')
+    await page.waitForLoadState('networkidle')
+    if (STYLES.length > 1) await page.getByTestId(`style-${duo.id}`).click()
+    await expect(page.getByTestId('photo-input-2')).toHaveCount(1)
+    // 时长档位是该风格自己的：每档都有卡片
+    for (const d of styleDurations(duo)) await expect(page.getByTestId(`duration-${d.id}`)).toBeVisible()
+    await page.getByTestId(`duration-${longest!.id}`).click()
+    await page.getByTestId('consent').check()
+
+    await page.getByTestId('photo-input').setInputFiles(PHOTO)
+    await expect(page.getByTestId('generate')).toBeDisabled()
+    await page.getByTestId('photo-input-2').setInputFiles(PHOTO)
+    await expect(page.getByTestId('generate')).toBeEnabled()
+    await page.getByTestId('generate').click()
+    await expect(page.getByTestId('generation-status')).toHaveAttribute('data-status', 'succeeded', { timeout: 60_000 })
+    const { generations } = await json<{ generations: Generation[] }>(page.request.get('/api/generations'))
+    expect(generations.map((g) => g.templateId)).toEqual([duo.id])
+    expect(await credits(page.request)).toBe(STARTER - cost)
+
+    // 双人风格只给一张照片：400，余额不变
+    const { upload } = await json<{ upload: { id: string } }>(uploadPhoto(page.request), 201)
+    const res = await json<{ error: string }>(
+      post(page.request, '/api/generations', { consent: true, uploadIds: [upload.id], durationId: longest!.id, styleId: duo.id }),
+      400,
+    )
+    expect(res.error).toBe('invalid_upload')
+    expect(await credits(page.request)).toBe(STARTER - cost)
+  })
 })

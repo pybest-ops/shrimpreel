@@ -1,18 +1,19 @@
 #!/usr/bin/env node
 // 部署前体检：按 wrangler 配置检查 APP_ENV、站点地址与域名、所选服务商需要的密钥（只核对名字）、绑定和资源 id、
-// 误用 mock、Cron 与死信队列、站点文件里没填完的 TODO(site)，以及远端 D1 是否还有未应用的 migration。
+// 误用 mock、Cron 与死信队列、站点文件里没填完的 TODO(site)、工作区未提交改动，以及远端 D1 是否还有未应用的 migration。
 // 有错误时退出码为 1，`npm run deploy` 先跑它。
 //
 //   npm run doctor                                  # 检查 wrangler.jsonc
 //   npm run doctor -- -c wrangler.staging.jsonc     # 检查预发配置
 //   npm run doctor -- --offline                     # 不访问 Cloudflare：跳过 secret 名字和远端 migration
+//   npm run doctor -- --offline --allow-dirty       # 跳过工作区未提交改动检查（本地调试用）
 //
 // 规则与后台概览的“配置检查”卡片共用 src/server/config-health.ts。
 import { spawnSync } from 'node:child_process'
 import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import ts from 'typescript'
-import { seatStyleIds, sellingPlans, site } from '../src/config/site.ts'
+import { STYLES, seatStyleIds, sellingPlans, site } from '../src/config/site.ts'
 import { checkConfig } from '../src/server/config-health.ts'
 
 export function readWranglerConfig(file) {
@@ -30,6 +31,7 @@ export function configBindings(config) {
     ...(config.queues?.producers ?? []).map((q) => q.binding),
     ...(config.ratelimits ?? []).map((r) => r.name),
     ...(config.send_email ?? []).map((e) => e.name),
+    config.media?.binding,
   ].filter(Boolean)
 }
 
@@ -71,18 +73,20 @@ export function findSiteTodos(root = fileURLToPath(new URL('..', import.meta.url
   )
 }
 
-// secretNames / pendingMigrations：undefined = 没有核对（--offline），null = 查询失败
+// 部署前检查工作区是否有未提交改动；`git status` 不可用或非 git 目录返回 null
+export function findDirtyFiles(root = fileURLToPath(new URL('..', import.meta.url))) {
+  const res = spawnSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' })
+  if (res.error || res.status !== 0) return null
+  return res.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter(Boolean)
+}
+
+// secretNames / pendingMigrations / dirtyFiles：undefined = 没有核对，null = 查询失败
 export function runDoctor(
   config,
-  {
-    secretNames,
-    pendingMigrations,
-    siteDomain = site.domain,
-    packageIds = site.packages.map((p) => p.id),
-    planIds = sellingPlans.map((p) => p.id),
-    seatStyles = seatStyleIds,
-    siteTodos = [],
-  } = {},
+  { secretNames, pendingMigrations, siteDomain = site.domain, packageIds = site.packages.map((p) => p.id), planIds = sellingPlans.map((p) => p.id), seatStyles = seatStyleIds, styleProviders = STYLES.flatMap((s) => (s.provider ? [s.provider] : [])), siteTodos = [], dirtyFiles = [] } = {},
 ) {
   const vars = config.vars ?? {}
   const issues = checkConfig({
@@ -93,6 +97,7 @@ export function runDoctor(
     packageIds,
     planIds,
     seatStyleIds: seatStyles,
+    styleProviders,
     siteDomain,
   })
   const error = (key, message) => issues.push({ level: 'error', key, message })
@@ -147,6 +152,13 @@ export function runDoctor(
   else if (pendingMigrations.length) {
     error('migrations', `远端 D1 有 ${pendingMigrations.length} 个未应用的 migration（${pendingMigrations.join('、')}）：先应用再部署新代码`)
   }
+  if (dirtyFiles === null) warn('dirty-worktree', '无法检查 Git 工作区状态（git status 失败）')
+  else if (dirtyFiles.length) {
+    const sample = dirtyFiles.slice(0, 3).join('、')
+    const message = `工作区有 ${dirtyFiles.length} 处未提交改动（${sample}${dirtyFiles.length > 3 ? ' 等' : ''}）：先提交或整理干净再部署，本地调试可加 --allow-dirty`
+    if (appEnv === 'production') error('dirty-worktree', message)
+    else warn('dirty-worktree', message)
+  }
   return issues
 }
 
@@ -165,6 +177,7 @@ function main(args) {
   }
   const file = arg('-c', '--config') ?? 'wrangler.jsonc'
   const offline = args.includes('--offline')
+  const allowDirty = args.includes('--allow-dirty')
   const config = readWranglerConfig(file)
   let secretNames
   let pendingMigrations
@@ -174,7 +187,7 @@ function main(args) {
     const migrations = wrangler(['d1', 'migrations', 'list', 'DB', '--remote', '-c', file])
     pendingMigrations = migrations.ok ? parsePendingMigrations(migrations.output) : null
   }
-  const issues = runDoctor(config, { secretNames, pendingMigrations, siteTodos: findSiteTodos() })
+  const issues = runDoctor(config, { secretNames, pendingMigrations, siteTodos: findSiteTodos(), dirtyFiles: allowDirty ? [] : findDirtyFiles() })
 
   console.log(`部署前体检：${file}（Worker ${config.name}，APP_ENV=${config.vars?.APP_ENV ?? '(空)'}）\n`)
   for (const issue of issues) console.log(`${issue.level === 'error' ? '✗' : '!'} ${issue.key}  ${issue.message}`)

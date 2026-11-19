@@ -1,7 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
-import { ARTICLES, LOCALE_META, articlePath, site } from '../../src/config/site'
+import { ARTICLES, LOCALE_META, articlePath, findStyle, site } from '../../src/config/site'
 // 与 npm run seo:check 共用同一套规则
 import { runSeoCheck } from '../../scripts/seo-check.mjs'
+import type { ArticleContent } from '../../src/content/en'
 import { ORIGIN, content } from './helpers'
 
 const { en, zh } = content
@@ -67,7 +68,8 @@ test('客户端路由切换后 head 同步更新（canonical 不残留上一页�
   expect(article.canonical).toBe(`${origin}${articlePath('trend')}`)
   expect(article.description).toBe(en.articles.trend.description)
   expect(article.jsonLd).toEqual(expect.arrayContaining(['Article', 'BreadcrumbList']))
-  expect(article.jsonLd).not.toContain('FAQPage')
+  // 首页的 FAQPage 不能带到文章页：文章自己有 faq 时恰好一个，没有时为零
+  expect(article.jsonLd.filter((t) => t === 'FAQPage')).toHaveLength((en.articles.trend as ArticleContent).faq?.length ? 1 : 0)
 
   // 面包屑回首页：首页的结构化数据恢复，文章的消失
   await page.getByRole('navigation', { name: en.common.breadcrumb }).getByRole('link', { name: en.meta.breadcrumbHome }).click()
@@ -172,5 +174,68 @@ test('文章封面：卡片和文章顶部显示，og:image 与 Article.image �
     expect(await ogImages()).toEqual([`${origin}${site.ogImage}`])
     expect(await articleImage()).toEqual([`${origin}${site.ogImage}`])
     await expect(page.locator('article > img')).toHaveCount(0)
+  }
+})
+
+test('文章可选能力：绑定风格显示样片并预选风格、带 FAQ 输出 FAQPage、段落表格；没填的文章不变', async ({ page }, testInfo) => {
+  const bound = ARTICLES.find((a) => a.style && findStyle(a.style) && (en.articles[a.key] as ArticleContent).faq?.length)
+  const plain = ARTICLES.find((a) => !a.style && !(en.articles[a.key] as ArticleContent).faq)
+  test.skip(!bound || !plain, '没有同时带 style、faq 的文章，或没有对照文章')
+  const style = findStyle(bound!.style!)!
+  const videos = 1 + style.examples.aiVersions.length
+  const jsonLdTypes = () =>
+    page.locator('script[type="application/ld+json"]').evaluateAll((els) => els.map((el) => JSON.parse(el.textContent ?? '{}') as { '@type': string; mainEntity?: unknown[] }))
+
+  for (const [prefix, c] of [
+    ['', en],
+    ['/zh', zh],
+  ] as const) {
+    const faq = (c.articles[bound!.key] as ArticleContent).faq!
+    await page.goto(`${prefix}${articlePath(bound!.key)}`)
+    const demo = page.getByTestId('article-style-demo')
+    await expect(demo.getByRole('heading', { level: 2, name: c.guides.styleDemo })).toBeVisible()
+    await expect(demo.locator('video')).toHaveCount(videos)
+    // 样片在导语之后、正文之前
+    const order = await page.evaluate(() => {
+      const intro = [...document.querySelectorAll('article > p')].find((p) => p.classList.contains('text-xl'))
+      const demo = document.querySelector('[data-testid="article-style-demo"]')
+      const body = document.querySelector('.prose-article')
+      return !!intro && !!demo && !!body && !!(intro.compareDocumentPosition(demo) & Node.DOCUMENT_POSITION_FOLLOWING) && !!(demo.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING)
+    })
+    expect(order).toBe(true)
+    // CTA 带 ?style= 预选风格
+    const cta = page.getByRole('link', { name: c.finalCta.cta })
+    await expect(cta).toHaveAttribute('href', `${prefix || '/'}?style=${style.id}#create`)
+    // FAQ：标题 + 折叠项，点开可见答案
+    const faqSection = page.getByTestId('article-faq')
+    await expect(faqSection.getByRole('heading', { level: 2, name: c.guides.faqTitle })).toBeVisible()
+    await expect(faqSection.locator('details')).toHaveCount(faq.length)
+    await faqSection.getByText(faq[0]!.q).click()
+    await expect(faqSection.getByText(faq[0]!.a)).toBeVisible()
+    const ld = (await jsonLdTypes()).filter((n) => n['@type'] === 'FAQPage')
+    expect(ld).toHaveLength(1)
+    expect(ld[0]!.mainEntity).toHaveLength(faq.length)
+    // 段落表格：表头、行数与 content 一致，首列是行标题
+    const tables = (c.articles[bound!.key] as ArticleContent).sections.flatMap((sec) => (sec.table ? [sec.table] : []))
+    await expect(page.locator('.prose-article table')).toHaveCount(tables.length)
+    if (tables[0]) {
+      const table = page.locator('.prose-article table').first()
+      await expect(table.locator('thead th')).toHaveText(tables[0].head)
+      await expect(table.locator('tbody tr')).toHaveCount(tables[0].rows.length)
+      await expect(table.locator('tbody th[scope=row]').first()).toHaveText(tables[0].rows[0]![0]!)
+    }
+    if (prefix === '') await testInfo.attach('bound-article', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' })
+  }
+
+  // 对照：没有 style、faq 的文章（模板示例里也没有表格）
+  const plainTables = (en.articles[plain!.key] as ArticleContent).sections.filter((sec) => sec.table).length
+  for (const prefix of ['', '/zh']) {
+    await page.goto(`${prefix}${articlePath(plain!.key)}`)
+    await expect(page.getByTestId('article-style-demo')).toHaveCount(0)
+    await expect(page.getByTestId('article-faq')).toHaveCount(0)
+    await expect(page.locator('article video')).toHaveCount(0)
+    await expect(page.locator('.prose-article table')).toHaveCount(plainTables)
+    expect((await jsonLdTypes()).map((n) => n['@type'])).not.toContain('FAQPage')
+    await expect(page.getByRole('link', { name: (prefix ? zh : en).finalCta.cta })).toHaveAttribute('href', `${prefix || '/'}#create`)
   }
 })

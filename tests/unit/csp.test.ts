@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { site } from '#/config/site'
-import { contentSecurityPolicy, summarizeCspReports } from '#/server/csp'
+import { contentSecurityPolicy, cspHeaderName, summarizeCspReports } from '#/server/csp'
 
 describe('contentSecurityPolicy', () => {
   it('img-src 放行 site.cspImageHosts，只写完整 origin，不用通配', () => {
@@ -9,6 +9,14 @@ describe('contentSecurityPolicy', () => {
       expect(host).toMatch(/^https:\/\/[a-z0-9.-]+$/)
       expect(imgSrc).toContain(host)
     }
+  })
+
+  it('包含 media-src self blob 且响应头随 cspReportOnly 切换', () => {
+    const policy = contentSecurityPolicy('nonce-123')
+    expect(policy).toContain("media-src 'self' blob:")
+    expect(policy).toContain("'nonce-nonce-123'")
+    expect(cspHeaderName(true)).toBe('Content-Security-Policy-Report-Only')
+    expect(cspHeaderName(false)).toBe('Content-Security-Policy')
   })
 })
 

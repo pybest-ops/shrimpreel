@@ -14,13 +14,25 @@ export type ArticleMedia = {
   width: number
   height: number
 } & ({ type: 'image' } | { type: 'video'; poster: string })
+// faq 可选：有就在正文后渲染折叠问答，并输出 FAQPage 结构化数据
+// 文章段落可选的表格（对比、规格），渲染在该段落的文字之后；第一列作为行标题
+export type ArticleTable = { head: string[]; rows: string[][] }
 // seoTitle 只覆盖搜索标题，页面 H1 仍显示完整文章问题。
-export type ArticleContent = { title: string; seoTitle?: string; description: string; intro: string; sections: Array<{ h: string; p: string[]; media?: ArticleMedia[] }> }
+export type ArticleContent = {
+  title: string
+  seoTitle?: string
+  description: string
+  intro: string
+  sections: Array<{ h: string; p: string[]; media?: ArticleMedia[]; table?: ArticleTable }>
+  faq?: Array<{ q: string; a: string }>
+}
 // FAQ 答案可附一条文章链接；锚文本用与文章标题不同的长尾词
 type FaqItem = { q: string; a: string; guide?: { article: ArticleKey; label: string } }
 // 首页可选转化区块，设为 null 就不渲染。痛点只写不用本站时的麻烦，不提产品；对比逐行写“自己做”和“用本站”，不承诺生成效果
 type ProblemBlock = { eyebrow: string; title: string; items: Array<{ title: string; body: string }> }
 type WithWithoutBlock = { eyebrow: string; title: string; without: string; with: string; rows: Array<{ without: string; with: string }> }
+// 首页规格表：一行一个能直接引用的事实（输入、时长、格式、价格等），AI 回答常照搬这类规格。值从 site 读取或与配置一致；设为 null 就不渲染
+type SpecsBlock = { eyebrow: string; title: string; rows: Array<{ label: string; value: string }> }
 
 export function en(s: S) {
   const k = s.keyword
@@ -31,6 +43,11 @@ export function en(s: S) {
   const photoRetention = uploadDays > 0 ? `deleted automatically ${uploadDays} days after upload` : 'kept until you delete them'
   const videoRetention = outputDays > 0 ? `kept for ${outputDays} days after they finish` : 'kept until you delete them'
   const { clarityId, ga4Id, cfBeaconToken, umamiWebsiteId } = s.analytics
+  const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`
+  const cheapest = [...s.packages].sort((x, y) => x.priceCents - y.priceCents)[0]!
+  const typeNames: Record<string, string> = { 'image/jpeg': 'JPG', 'image/png': 'PNG', 'image/webp': 'WebP' }
+  const uploadTypes = s.upload.contentTypes.map((t) => typeNames[t] ?? t).join(', ')
+  const uploadMb = Math.round(s.upload.maxBytes / 1024 / 1024)
   // 每种风格的展示名和一句话介绍；site.styles 加风格时这里补一项（缺了 typecheck 报错），zh.ts 同
   const styles: Record<StyleId, StyleCopy> = {
     'neon-shuffle-v1': { name: k, tagline: 'The original routine, beat for beat.' },
@@ -54,6 +71,8 @@ export function en(s: S) {
       refundDescription: `When ${b} returns credits or refunds a credit pack, and how long refunds take to arrive.`,
       reportTitle: `Report content – ${b}`,
       reportDescription: `Report a ${b} video that shows you without consent, involves a minor or infringes your rights. We review every report within ${s.takedownSlaHours} hours.`,
+      verifyTitle: `Verify a Video – Made with ${b}?`,
+      verifyDescription: `Check whether a video was made with ${b}. Choose the file and we read its AI label in your browser; the file is never uploaded.`,
       ogImageAlt: `${b}: turn one photo into your own ${k} video`,
       breadcrumbHome: 'Home',
     },
@@ -92,6 +111,9 @@ export function en(s: S) {
       dropHint: 'JPG, PNG or WebP · up to 10 MB',
       guidance: 'Best results: one person, facing the camera, even lighting, head and shoulders visible. Avoid sunglasses, masks and heavy filters.',
       change: 'Change photo',
+      photoLeft: 'Left dancer',
+      photoRight: 'Right dancer',
+      duoGuidance: 'Two dancers in this video: add one photo per person, left and right as they stand.',
       uploading: 'Uploading…',
       uploaded: 'Photo ready',
       stepStyle: 'Dance style',
@@ -128,6 +150,24 @@ export function en(s: S) {
       makeAnother: 'Make another',
       aiNotice: 'This video is AI-generated. Keep the label and say it is AI when you share it.',
       expiresOn: (date: string) => `Download it before ${date}. Videos are deleted automatically after that.`,
+      draftKept: 'Your photo and choices are kept while you sign in.',
+      guestPrice: (credits: number, price: string) => `This video uses ${credits} credits · packs from ${price}`,
+      phoneOpen: 'Photo on your phone? Scan to upload',
+      phoneTitle: 'Upload from your phone',
+      phoneHelp: 'Point your phone camera at the code and open the link, then pick or take a photo. No sign-in needed on your phone.',
+      phoneWaiting: 'Waiting for your photo…',
+      phoneExpiresIn: (time: string) => `Code expires in ${time}`,
+      phoneExpired: 'This code has expired.',
+      phoneRenew: 'Get a new code',
+      phoneCancel: 'Cancel',
+      phoneLinkLabel: 'Or open this link on your phone',
+    },
+    phoneUpload: {
+      title: 'Upload from your phone',
+      noToken: 'Scan the code shown on your computer to start.',
+      choose: 'Choose or take a photo',
+      uploading: 'Sending to your computer…',
+      done: 'Photo sent to your computer. You can close this page.',
     },
     madeWith: {
       eyebrow: `Made with ${b}`,
@@ -178,6 +218,20 @@ export function en(s: S) {
       ],
       guide: `Read the full ${k} trend guide`,
     },
+    specs: {
+      eyebrow: 'At a glance',
+      title: `${b} specs`,
+      rows: [
+        { label: 'Input', value: `One clear photo of one person, ${uploadTypes} up to ${uploadMb} MB` },
+        { label: 'Styles', value: s.styles.map((style) => styles[style.id].name).join(', ') },
+        { label: 'Video length', value: `${s.durations.map((d) => d.seconds).join(', ')} seconds` },
+        { label: 'Output', value: `Vertical ${s.template.aspectRatio} MP4, no watermark` },
+        { label: 'Price', value: `1 credit = 1 second of video; packs from ${usd(cheapest.priceCents)} for ${cheapest.credits} credits` },
+        { label: 'Credits', value: subs ? 'Pack credits never expire; plan credits expire at the end of each month' : 'Never expire, no subscription' },
+        { label: 'Render time', value: 'A few minutes' },
+        { label: 'Failed renders', value: 'Credits refunded automatically' },
+      ],
+    } as SpecsBlock | null,
     features: {
       eyebrow: 'Features',
       title: `Everything you need for a ${k} clip`,
@@ -293,6 +347,7 @@ export function en(s: S) {
       terms: 'Terms of Service',
       refund: 'Refund Policy',
       report: 'Report content',
+      verify: 'Verify a video',
       rights: `© ${new Date().getFullYear()} ${b}. All rights reserved.`,
       // 页脚“问问 AI”：llms.txt 链接 + 几个带预填提问的 AI 按钮
       agentDocs: 'AI & agent docs',
@@ -321,10 +376,16 @@ export function en(s: S) {
       needReply: 'Need an answer about billing or an order?',
       contactLink: 'Contact support',
     },
-    // 统计同意横幅：只在配置了 GA4 时出现
+    support: { label: 'Help & support' },
+    // 统计同意横幅：配置了 GA4 或 Clarity 时出现；bodyOptOut 用于默认开启统计 Cookie 的地区（从页脚打开时）
     consent: {
       title: 'Analytics cookies',
-      body: 'We use Google Analytics and a first-party referral cookie to see how the site is used. Nothing is set unless you accept; change it any time under “Cookie settings”.',
+      body: clarityId
+        ? `We use ${ga4Id ? 'Google Analytics, ' : ''}Microsoft Clarity session recordings and a first-party referral cookie to see how the site is used. Until you accept, Clarity records without cookies and nothing else is set; change it any time under “Cookie settings”.`
+        : 'We use Google Analytics and a first-party referral cookie to see how the site is used. Nothing is set unless you accept; change it any time under “Cookie settings”.',
+      bodyOptOut: clarityId
+        ? `Analytics cookies are on by default in your region. We use ${ga4Id ? 'Google Analytics, ' : ''}Microsoft Clarity session recordings and a first-party referral cookie to see how the site is used. Choose “Reject” to turn them off; Clarity then records without cookies.`
+        : 'Analytics cookies are on by default in your region. We use Google Analytics and a first-party referral cookie to see how the site is used. Choose “Reject” to turn them off.',
       learnMore: 'Privacy Policy',
       accept: 'Accept',
       reject: 'Reject',
@@ -492,10 +553,28 @@ export function en(s: S) {
       sent: 'Thanks! We’ll get back to you soon.',
       guides: `Photo tips and trend background: browse the ${k} guides`,
     },
+    verify: {
+      title: 'Verify a video',
+      body: `Check whether a video was made with ${b}. Every video we generate carries a machine-readable AI label in its file metadata. Choose a file and your browser looks for that label, then we confirm it against our records. The file is read on your device and is never uploaded.`,
+      choose: 'Choose a video file',
+      checking: 'Checking…',
+      foundTitle: `Made with ${b}`,
+      foundBody: 'This video carries our AI label and the label matches a video we generated.',
+      foundByIdBody: 'This ID matches a video we generated. Choose the file to check that it carries our label.',
+      fields: { generator: 'Generator', model: 'Model', created: 'Created', id: 'Video ID' },
+      notFoundTitle: 'No matching record',
+      notFoundBody: 'The label points to a video we have no record of. It may have been deleted, or the label may have been copied from another file.',
+      noMarkerTitle: 'No AI label found',
+      noMarkerBody: `We did not find a ${b} AI label in this file. Videos that a platform re-compressed or re-uploaded usually lose their metadata, so this does not prove the video is real or made by someone else.`,
+      readError: 'We could not read this file. Choose an MP4 video.',
+      lookupError: 'We could not reach our records right now. Please try again in a minute.',
+      caveat: 'The label is metadata: it can be removed, and it can be copied onto another file. A match shows the label belongs to a real generation, not that the pictures are unchanged.',
+    },
     report: {
       title: 'Report content or request removal',
       body: `If a video made with ${b} shows you without your consent, involves a minor, impersonates someone or infringes your rights, tell us here. A person reviews every report and qualifying content is removed within ${s.takedownSlaHours} hours. Removed photos are blocked from being uploaded again.`,
-      name: 'Your full name (serves as your electronic signature)',
+      name: 'Your full name',
+      signature: 'Electronic signature (type your full name)',
       email: 'Email we can reach you at',
       contentRef: 'Where is the content?',
       contentRefHint: 'Paste a link or the file name (downloaded files contain an ID such as gen_…), or describe where you saw it.',
@@ -555,6 +634,8 @@ export function en(s: S) {
       description: `Guides to the ${k} trend and to making your own ${k} AI video: where it came from, which photos work best and step-by-step tips.`,
       intro: `Background on the ${k} trend and practical tips for turning one photo into a ${k} AI video.`,
       related: 'Related guides',
+      styleDemo: `See the ${k} routine in action`,
+      faqTitle: 'FAQ',
     },
     errors: {
       unauthorized: 'Please sign in first.',
@@ -568,6 +649,8 @@ export function en(s: S) {
       daily_limit: 'We’ve hit today’s rendering capacity. Please try again tomorrow; your credits were not used.',
       rate_limited: 'Too many requests. Please wait a minute and try again.',
       file_too_large: 'That file is larger than 10 MB.',
+      photo_too_small: `That photo is too small for the face to come through. Please use one at least ${s.upload.minSide} px on its shorter side.`,
+      photo_bad_ratio: `That photo is too narrow or too wide for the video model. Please pick one whose long side is at most ${s.upload.maxRatio}× its short side, like a normal portrait or selfie (crop long screenshots first).`,
       length_required: 'Your browser sent the file in a way we can’t accept. Please try again in another browser.',
       unsupported_file_type: 'Please upload a JPG, PNG or WebP image.',
       invalid_upload: 'Please upload the photo again.',
@@ -605,8 +688,11 @@ export function en(s: S) {
       subscription_cancel_unsupported: 'This subscription can’t be canceled here. Please contact support.',
       media_removed: 'This video was removed after a content report.',
       share_rejected: 'This video can’t be shared publicly because it didn’t pass our content check.',
-      invalid_report: 'Please fill in every required field and confirm the statement.',
+      invalid_report: 'Please fill in every required field, sign and confirm the statement.',
+      consent_required: 'Please confirm the consent box before generating.',
       not_found: 'We couldn’t find that. It may belong to a different account.',
+      handoff_expired: 'This code has expired. Get a new one on your computer.',
+      handoff_used: 'A photo was already sent with this code.',
       internal_error: 'Unexpected error. Please try again.',
       account_disabled: `This account has been disabled. Email ${s.supportEmail} if you think this is a mistake.`,
       account_conflict: `This email is linked to a different Google account. Sign in with that account, or email ${s.supportEmail} for help.`,
@@ -618,25 +704,30 @@ export function en(s: S) {
         sections: [
           { h: 'What we collect', p: [`When you sign in with Google we receive your name, email address and profile picture from Google; when you sign in with an email code we only receive your email address. When you create a video we store the photo you upload and the video we generate. Payment details are handled by our payment partner; ${b} never sees your card number.`] },
           { h: 'How we use it', p: ['Your photo is used only to render the video you request. We use your email to operate your account, send receipts and service notices (such as when your video is ready or a report you filed is resolved) and answer support requests. We do not send marketing email. We do not sell personal data and do not use your photos to train models.'] },
-          { h: 'Storage and retention', p: [`Files are stored with our infrastructure provider in encrypted form. Uploaded photos are ${photoRetention} and generated videos are ${videoRetention}, unless you delete them or your account sooner. Order and payment records are kept as required for tax and accounting. When you delete your account we keep only a one-way hash of your email address, so the same email cannot claim the sign-up bonus twice.`] },
-          { h: 'Safety checks', p: ['Before a photo is used it may be checked by an automated content-safety classifier. The check runs only to enforce our rules, and its result is not used for anything else. Public forms are protected by a bot-detection service that may process your IP address and browser signals.'] },
+          { h: 'Storage and retention', p: [`Files are stored with our infrastructure provider in encrypted form. Uploaded photos are ${photoRetention} and generated videos are ${videoRetention}, unless you delete them or your account sooner. Order and payment records are kept as required for tax and accounting. When you delete your account we keep only a one-way hash of your email address, so the same email cannot claim the sign-up bonus twice.`, 'A photo you pick before signing in or buying credits is kept only in your browser and deleted once a render starts or after 24 hours. A photo sent from your phone by QR code passes through our server: it is deleted as soon as it reaches your computer and kept for 1 hour at most.'] },
+          { h: 'Safety checks', p: ['Before a photo is used it may be checked by an automated content-safety classifier. The check runs only to enforce our rules, and its result is not used for anything else. Public forms are protected by a bot-detection service that may process your IP address and browser signals. Finished videos may be checked in the same way: a few still frames are taken from the video and sent to the classifier before the video is delivered, and a video that fails the check is not delivered and its credits are refunded.'] },
           {
             h: 'Cookies and analytics',
             p: [
               'The site uses a few cookies and similar browser storage that it needs to work, such as your sign-in session and your light or dark theme preference.',
               'We also set a first-party cookie (vt_attr, kept for 90 days) that records how you first and most recently reached us, such as a referring website or campaign link. We use it only to see which channels lead to sign-ups and purchases, and we do not share it with advertising networks.' +
-                (ga4Id ? ' It is only set after you accept analytics cookies in the banner, and withdrawing consent deletes it.' : ''),
+                (ga4Id || clarityId ? ' It is only set while analytics cookies are on, and turning them off deletes it.' : ''),
+              ga4Id || clarityId
+                ? 'If you visit from the European Economic Area, the United Kingdom or Switzerland, or we cannot tell where you are visiting from, analytics cookies stay off until you accept them in the banner. Elsewhere they are on by default. Wherever you are, you can turn them on or off at any time under “Cookie settings” in the footer; turning them off deletes them.'
+                : '',
               s.referralRewardCredits > 0
                 ? 'If you open a friend’s invite link, we set a cookie (vt_ref, kept for up to 30 days and removed once you sign up) so the invite can be credited. To prevent abuse of invite rewards, we store a salted hash of your IP address with the invite, not the address itself. Neither of you can see the other’s account details.'
                 : '',
-              clarityId || ga4Id || cfBeaconToken || umamiWebsiteId ? '' : 'We do not use third-party analytics or advertising cookies.',
-              clarityId ? 'We use Microsoft Clarity for session recordings and heatmaps to understand how people interact with our pages. Microsoft processes interaction and device data and may use analytics cookies. Clarity is not controlled by our Google Analytics cookie banner.' : '',
+              ga4Id || cfBeaconToken || umamiWebsiteId || clarityId ? '' : 'We do not use third-party analytics or advertising cookies.',
               cfBeaconToken ? 'We count page views with Cloudflare Web Analytics, which does not use cookies or track you across websites.' : '',
               umamiWebsiteId
                 ? 'We count visits with Umami, a cookie-free analytics tool loaded from our own domain. It does not set cookies or store your IP address; your IP address is only used to determine your country and to count unique visits.'
                 : '',
+              clarityId
+                ? 'We use Microsoft Clarity to understand how visitors use the site through heatmaps and session recordings of clicks, scrolling and page changes. Text you type into forms is masked and not recorded. While analytics cookies are off, Clarity sets no cookies and cannot link one page view to the next; while they are on, it sets cookies (such as _clck and _clsk) to connect your visits. Microsoft processes this data, including your IP address and device information, on our behalf. Turning analytics cookies off under “Cookie settings” in the footer deletes these cookies.'
+                : '',
               ga4Id
-                ? 'If you accept analytics cookies in the banner, we also use Google Analytics. It sets cookies (such as _ga) and lets Google process your IP address and device information to produce usage reports for us. Google Analytics is not loaded until you accept. You can withdraw consent at any time under “Cookie settings” in the footer, which also deletes these cookies.'
+                ? 'While analytics cookies are on, we also use Google Analytics. It sets cookies (such as _ga) and lets Google process your IP address and device information to produce usage reports for us. Google Analytics is not loaded while they are off, and turning them off under “Cookie settings” in the footer also deletes these cookies.'
                 : '',
             ].filter(Boolean),
           },
@@ -650,7 +741,8 @@ export function en(s: S) {
                 },
               ]
             : []),
-          { h: 'Service providers', p: [`We rely on a small number of processors: cloud hosting, storage and email delivery, an AI rendering provider that processes your photo only for your request, a content-safety classifier, a payment provider acting as merchant of record${clarityId || ga4Id || cfBeaconToken || umamiWebsiteId ? ', and the analytics services described above' : ''}.`] },
+          { h: 'Service providers', p: [`We rely on a small number of processors: cloud hosting, storage and email delivery, an AI rendering provider that processes your photo only for your request, a content-safety classifier, a payment provider acting as merchant of record${ga4Id || cfBeaconToken || umamiWebsiteId || clarityId ? ', and the analytics services described above' : ''}.`] },
+          { h: 'Children', p: [`${b} is not directed to children under 13 and requires users to be 18 or older. We do not knowingly collect personal data from children under 13. If we learn that we have, we delete it. Email ${s.supportEmail} if you believe a child has given us personal data.`] },
           { h: 'Your rights', p: [`You can download or delete your videos at any time. In Settings you can export a copy of your data as JSON or delete your account. For any other privacy request, email ${s.supportEmail}.`] },
         ],
       },
@@ -659,7 +751,7 @@ export function en(s: S) {
         sections: [
           { h: 'Using the service', p: [`${b} lets you create short AI videos from a photo. You must be at least 18 years old, or the age of majority where you live, to use it.`] },
           { h: 'Your content and consent', p: ['Only upload photos of yourself or of adults who have given you permission. Do not upload photos of minors, celebrities or public figures, and do not use the service to harass, impersonate or deceive anyone. We may remove content and close accounts that break these rules.'] },
-          { h: 'Generated videos', p: ['You may use the videos you create for personal and social media purposes. AI output can contain mistakes; review a video before sharing it. Videos are labelled as AI-generated: keep that label, say the video is AI-generated when you share it and never present it as real footage of an event.'] },
+          { h: 'Generated videos', p: [`You may use the videos you create for personal and social media purposes. AI output can contain mistakes; review a video before sharing it. Videos are labelled as AI-generated: keep that label, say the video is AI-generated when you share it and never present it as real footage of an event.${s.aiMetadata.enabled ? ' Each video file also contains machine-readable AI metadata (an XMP label with the generator, model, creation time and a video ID, but no personal information); you can check a file on our Verify page.' : ''}`] },
           { h: 'Reports and removal', p: [`Anyone can report content through our report page. We review reports and remove content that breaks these terms or someone’s rights within ${s.takedownSlaHours} hours. Removed photos are blocked from being uploaded again, and accounts involved in serious or repeated violations may be closed without a refund of used credits.`] },
           {
             h: 'Credits and payments',
@@ -712,9 +804,18 @@ export function en(s: S) {
         intro: `You can create your own ${k} video in about five minutes. Here is the full process and a few tips for the best result.`,
         sections: [
           { h: '1. Pick the right photo', p: ['Choose a recent, sharp photo of one person looking at the camera. Even daylight works best. Avoid sunglasses, hats that cover the face and beauty filters.'] },
-          { h: '2. Upload and choose a length', p: ['Sign in, drop the photo into the generator and pick a length. Shorter clips render faster and cost fewer credits; the full version follows the complete routine.'] },
+          {
+            h: '2. Upload and choose a length',
+            p: ['Sign in, drop the photo into the generator and pick a length. Shorter clips render faster and cost fewer credits; the full version follows the complete routine.'],
+            table: { head: ['Length', 'Credits'], rows: s.durations.map((d) => [`${d.seconds} seconds`, String(d.credits)]) },
+          },
           { h: '3. Confirm consent and generate', p: ['Tick the consent box to confirm the photo is yours or that you have permission, then start the render. You can leave the page while it works.'] },
           { h: '4. Download and share', p: ['When the video is ready, download the MP4 from the generator or from My videos and post it wherever you like.'] },
+        ],
+        faq: [
+          { q: `How long does a ${k} AI video take to make?`, a: `Most videos finish in 2–8 minutes depending on length and queue. You can close the page while it renders; finished videos wait in My videos.` },
+          { q: 'How many credits does a video cost?', a: `Each second of video costs one credit, so ${s.durations.map((d) => `${d.seconds} seconds is ${d.credits} credits`).join(', ')}. Credits are refunded automatically if a render fails.` },
+          { q: 'Which photo gives the best result?', a: 'A recent, sharp photo of one person facing the camera in even light. Avoid sunglasses, hats that cover the face and beauty filters.' },
         ],
       },
     } satisfies Record<ArticleKey, ArticleContent>,

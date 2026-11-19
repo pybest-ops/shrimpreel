@@ -9,6 +9,7 @@ export function parsePendingMigrations(output: string): string[] | null
 export function parseSecretNames(output: string): string[] | null
 export type SiteTodo = { file: string; line: number; text: string }
 export function findSiteTodos(root?: string): SiteTodo[]
+export function findDirtyFiles(root?: string): string[] | null
 export function runDoctor(
   config: WranglerConfig,
   options?: {
@@ -19,6 +20,9 @@ export function runDoctor(
     planIds?: string[]
     // 配了多人位置的风格 id，默认取 site.ts 的 seatStyleIds
     seatStyles?: readonly string[]
+    // 风格指定的视频服务商（STYLES 里写了 provider 的）
+    styleProviders?: string[]
     siteTodos?: SiteTodo[]
+    dirtyFiles?: string[] | null
   },
 ): ConfigIssue[]
